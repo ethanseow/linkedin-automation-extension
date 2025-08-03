@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "LinkedIn Automation Extension",
+  "version": "1.0.0",
+  "description": "Automate LinkedIn outreach with custom search queries and messages",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://*.linkedin.com/*"
+  ],
+  "action": {
+    "default_popup": "index.html",
+    "default_title": "LinkedIn Automation"
+  },
+      "content_scripts": [
+      {
+        "matches": ["https://*.linkedin.com/*"],
+        "js": ["content.js"],
+        "run_at": "document_end"
+      }
+    ],
+    "background": {
+    "service_worker": "background.js"
+  }
+}
