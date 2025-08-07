@@ -1,4 +1,5 @@
 window.addEventListener('load', async () => {
+  console.log('Content script loaded');
   try {
     const automationSettings = await getAutomationSettings();
     if (!automationSettings) return;
@@ -95,9 +96,11 @@ async function handleSendWithoutNote() {
 }
 
 async function handleConnect(card) {
-  const connectButton = Array.from(card.querySelectorAll('button')).find(
-    btn => btn.textContent && btn.textContent.trim().toLowerCase() === 'connect'
-  );
+  await sleep(1000);
+  console.log('Card:', card);
+  const connectButton = card.querySelector('button');
+  
+  console.log('Connect button:', connectButton);
 
   if (!connectButton || connectButton.disabled) throw new Error('Connect button not found');
 
@@ -115,6 +118,7 @@ async function processPerson(card, message) {
       await handler();
       break;
     } catch (error) {
+      console.log('Error processing person:', error);
       continue;
     }
   }
@@ -148,10 +152,12 @@ async function processPeople(message, maxPeople) {
 
   for (let i = 0; i < peopleCards.length && numProcessed < maxPeople; i++) {
     const card = peopleCards[i];
+    console.log('Processing person:', card);
     try {
       await processPerson(card, message);
       numProcessed++;
     } catch (error) {
+      console.log('Error processing person:', error);
       continue;
     }
   }
@@ -161,6 +167,7 @@ async function processPeople(message, maxPeople) {
 }
 
 async function startAutomation(searchQuery, message, maxPeople = 20) {
+  console.log('Starting automation');
   const searchUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(searchQuery)}`;
 
   if (!window.location.href.includes(`/search/results/people/?keywords=${encodeURIComponent(searchQuery)}`)) {
@@ -172,8 +179,8 @@ async function startAutomation(searchQuery, message, maxPeople = 20) {
   const numProcessed = await processPeople(message, maxPeople);
 
   if (isNextPageAvailable()) {
-    await saveAutomationSettings(searchQuery, message, maxPeople - numProcessed);
-    await navigateToNextPage();
+     await saveAutomationSettings(searchQuery, message, maxPeople - numProcessed);
+     await navigateToNextPage();
   }
 }
 
