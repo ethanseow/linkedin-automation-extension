@@ -9,8 +9,8 @@ declare global {
 }
 
 function App() {
-  const [searchQuery, setSearchQuery] = useState('')
-  const [message, setMessage] = useState('')
+  const [searchQuery, setSearchQuery] = useState('crypto')
+  const [message, setMessage] = useState('Hi!')
   const [isRunning, setIsRunning] = useState(false)
 
   const handleStartAutomation = async () => {

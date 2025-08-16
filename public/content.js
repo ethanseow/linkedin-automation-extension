@@ -1,41 +1,8 @@
-window.addEventListener('load', async () => {
-  console.log('Content script loaded');
-  try {
-    const automationSettings = await getAutomationSettings();
-    if (!automationSettings) return;
-
-    startAutomation(automationSettings.searchQuery, automationSettings.message, automationSettings.maxPeople);
-  } catch (error) {
-    console.error('Error reading from storage:', error);
-  }
-});
-
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
   if (request.action !== 'startAutomation') return;
-  
-  startAutomation(request.searchQuery, request.message);
+
+  await startAutomation(request.searchQuery, request.message);
 });
-
-async function getAutomationSettings() {
-  const result = await chrome.storage.local.get(['automationSettings']);
-  const { automationSettings } = result;
-
-  if (!automationSettings?.searchQuery || !automationSettings?.message || !automationSettings?.maxPeople) {
-    return null;
-  }
-
-  return automationSettings;
-}
-
-async function saveAutomationSettings(searchQuery, message, maxPeople) {
-  await chrome.storage.local.set({
-    automationSettings: {
-      searchQuery,
-      message,
-      maxPeople
-    }
-  });
-}
 
 async function closeUpsellModal() {
   const upsellModal = document.querySelector('.modal-upsell');
@@ -74,7 +41,7 @@ async function handleAddFreeNote(message) {
   const sendButton = Array.from(document.querySelectorAll('button')).find(
     btn => btn.textContent && btn.textContent.trim() === 'Send'
   );
-  
+
   if (!sendButton || sendButton.disabled) throw new Error('Send button not found');
   sendButton.click();
 }
@@ -97,10 +64,8 @@ async function handleSendWithoutNote() {
 
 async function handleConnect(card) {
   await sleep(1000);
-  console.log('Card:', card);
   const connectButton = card.querySelector('button');
-  
-  console.log('Connect button:', connectButton);
+  console.log('linkedin-automation: Connect button:', connectButton);
 
   if (!connectButton || connectButton.disabled) throw new Error('Connect button not found');
 
@@ -109,16 +74,17 @@ async function handleConnect(card) {
 }
 
 async function processPerson(card, message) {
+  console.log('linkedin-automation: Processing person:', card);
   const curriedHandleAddFreeNote = handleAddFreeNote.bind(null, message);
   const handlers = [curriedHandleAddFreeNote, handleSendWithoutNote];
 
-  for(const handler of handlers) {
+  for (const handler of handlers) {
     try {
       await handleConnect(card);
       await handler();
       break;
     } catch (error) {
-      console.log('Error processing person:', error);
+      console.log('linkedin-automation: Error processing person:', error);
       continue;
     }
   }
@@ -140,47 +106,54 @@ function isNextPageAvailable() {
 async function navigateToNextPage() {
   const nextPageButton = getNextPageButton();
   if (!nextPageButton) throw new Error('Next page button not found');
-  
+
   nextPageButton.click();
   await sleep(2000);
-  await waitForElement('.search-results-container');
 }
 
 async function processPeople(message, maxPeople) {
   let numProcessed = 0;
   const peopleCards = document.querySelectorAll('.linked-area');
 
+  if (memory.firstCard === null) {
+    saveFirstCard(peopleCards[0]);
+  }
+  
   for (let i = 0; i < peopleCards.length && numProcessed < maxPeople; i++) {
     const card = peopleCards[i];
-    console.log('Processing person:', card);
+    console.log('linkedin-automation: Processing person:', card);
     try {
       await processPerson(card, message);
       numProcessed++;
     } catch (error) {
-      console.log('Error processing person:', error);
       continue;
     }
   }
 
-  console.log(`We processed ${numProcessed} people out of ${peopleCards.length}`);
+  console.log(`linkedin-automation: We processed ${numProcessed} people out of ${peopleCards.length}`);
   return numProcessed;
 }
 
 async function startAutomation(searchQuery, message, maxPeople = 20) {
-  console.log('Starting automation');
+  console.log('linkedin-automation: Starting automation');
   const searchUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(searchQuery)}`;
 
-  if (!window.location.href.includes(`/search/results/people/?keywords=${encodeURIComponent(searchQuery)}`)) {
-    window.location.href = searchUrl;
-    return;
-  }
+  // TODO: refactor code for navigating to correct search results page
+  // if (!window.location.href.includes(`/search/results/people/?keywords=${encodeURIComponent(searchQuery)}`)) {
+  //   await saveAutomationSettings(searchQuery, message, maxPeople);
+  //   window.location.href = searchUrl;
+  //   return;
+  // }
 
+
+  // TODO: wait for element seems to be stuck here, does not move on from this step when triggering the automation
   await waitForElement('.search-results-container');
   const numProcessed = await processPeople(message, maxPeople);
 
   if (isNextPageAvailable()) {
-     await saveAutomationSettings(searchQuery, message, maxPeople - numProcessed);
-     await navigateToNextPage();
+    await navigateToNextPage();
+    if(maxPeople - numProcessed <= 0) { return; }
+    await startAutomation(searchQuery, message, maxPeople - numProcessed);
   }
 }
 
