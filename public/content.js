@@ -5,68 +5,29 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
 });
 
 async function closeUpsellModal() {
-  const upsellModal = document.querySelector('.modal-upsell');
-  if (!upsellModal) return;
-
-  const dismissButton = upsellModal.querySelector('button[aria-label="Dismiss"]');
-  if (!dismissButton) throw new Error('Dismiss button not found');
-
+  const dismissButton = await querySelectorWithTimeout('[aria-label="Dismiss"]', 1, 1000);
   dismissButton.click();
-  await sleep(500);
 }
 
 async function handleAddFreeNote(message) {
-  const addFreeNoteButton = Array.from(document.querySelectorAll('button')).find(
-    btn => btn.textContent && btn.textContent.trim() === 'Add a free note'
-  );
-
-  if (!addFreeNoteButton) throw new Error('Add free note button not found');
-
+  const addFreeNoteButton = await querySelectorWithTimeout('[aria-label="Add a free note"]', 1, 1000);
   addFreeNoteButton.click();
-  await sleep(1000);
-
-  const upsellModal = document.querySelector('.modal-upsell');
-  if (upsellModal) {
-    await closeUpsellModal();
-    throw new Error('Cannot add a free note');
-  }
-
-  const messageInput = document.querySelector('textarea[name="message"], textarea[data-control-name="message"]');
-  if (!messageInput) throw new Error('Message input not found');
-
+  await closeUpsellModal();
+  const messageInput = await querySelectorWithTimeout('textarea[name="message"], textarea[data-control-name="message"]', 1, 1000);
   messageInput.value = message;
   messageInput.dispatchEvent(new Event('input', { bubbles: true }));
-  await sleep(1000);
-
-  const sendButton = Array.from(document.querySelectorAll('button')).find(
-    btn => btn.textContent && btn.textContent.trim() === 'Send'
-  );
-
-  if (!sendButton || sendButton.disabled) throw new Error('Send button not found');
+  const sendButton = await querySelectorWithTimeout('button[aria-label="Send"]', 1, 1000);
   sendButton.click();
 }
 
 async function handleSendWithoutNote() {
-  const sendWithoutNoteButton = Array.from(document.querySelectorAll('button')).find(
-    btn => btn.textContent && btn.textContent.trim() === 'Send without a note'
-  );
-
-  if (!sendWithoutNoteButton) throw new Error('Send without note button not found');
-
+  const sendWithoutNoteButton = await querySelectorWithTimeout('button[aria-label="Send without a note"]', 1, 1000);
   sendWithoutNoteButton.click();
-  await sleep(500);
 }
 
-async function handleConnect(personElement) {
-  await sleep(1000);
-  const connectButton = Array.from(personElement.querySelectorAll('button')).find(
-    btn => btn.textContent && btn.textContent.trim() === 'Connect'
-  );
-
-  if (!connectButton || connectButton.disabled) throw new Error('Connect button not found');
-
+async function handleConnect() {
+  const connectButton = await querySelectorWithTimeout('.linked-area button', 1, 1000);
   connectButton.click();
-  await sleep(1000);
 }
 
 async function connectWithPerson(personElement, message) {
@@ -77,7 +38,7 @@ async function connectWithPerson(personElement, message) {
 
   for (const handler of handlers) {
     try {
-      await handleConnect(personElement);
+      await handleConnect();
       await handler();
       didConnect = true;
       console.log('linkedin-automation: Person processed:', personElement);
@@ -114,13 +75,18 @@ async function navigateToNextPage() {
   await sleep(2000);
 }
 
+
 async function connectWithPeople(message, maxPeople) {
   let numConnected = 0;
 
-  // Wait for page to load and get all people cards
-  // TODO: refactor code to handle dynamic loading of HTML
-  await sleep(3000);
-  const peopleCards = document.querySelectorAll('.linked-area');
+  let peopleCards = [];
+  try {
+    peopleCards = await querySelectorWithTimeout('.linked-area', 10, 10000);
+  } catch (error) {
+    console.log('linkedin-automation: Error getting people cards:', error);
+    return 0;
+  }
+  peopleCards = peopleCards.filter(card => card.textContent.includes('Connect'));
 
   for (let i = 0; i < peopleCards.length && numConnected < maxPeople; i++) {
     const card = peopleCards[i];
@@ -133,7 +99,7 @@ async function connectWithPeople(message, maxPeople) {
     }
   }
 
-  console.log(`linkedin-automation: We processed ${numConnected} people out of ${peopleCards.length}`);
+  console.log(`linkedin-automation: We processed ${numConnected} people out of ${peopleCards.length} possible connections`);
   return numConnected;
 }
 
@@ -150,7 +116,7 @@ async function startAutomation(searchQuery, message, maxPeople = 20) {
 
 
   // TODO: wait for element seems to be stuck here, does not move on from this step when triggering the automation
-  await querySelectorAllWithTimeout('.search-results-container');
+  await querySelectorWithTimeout('.search-results-container',1,5000);
   const numProcessed = await connectWithPeople(message, maxPeople);
 
   if (isNextPageAvailable()) {
@@ -160,27 +126,29 @@ async function startAutomation(searchQuery, message, maxPeople = 20) {
   }
 }
 
-function querySelectorAllWithTimeout(selector, minCount = 0, timeout = 3000) {
-  return new Promise((resolve, reject) => {
-    const element = document.querySelectorAll(selector);
-    if (element.length > minCount) {
+function querySelectorWithTimeout(selector, minCount = 1, timeout = 3000) {
+  const checkElements = () => {
+    const elements = document.querySelectorAll(selector);
+    if (elements.length >= minCount) {
       console.log('linkedin-automation: Element found:', selector);
-      resolve(null);
-      return;
+      return minCount === 1 ? elements[0] : elements;
     }
+    return null;
+  };
+  
+  return new Promise((resolve, reject) => {
+    const result = checkElements();
+    if (result) return resolve(result);
 
     const observer = new MutationObserver(() => {
-      const element = document.querySelectorAll(selector);
-      if (element.length > minCount) {
+      const result = checkElements();
+      if (result) {
         observer.disconnect();
-        resolve(null);
+        resolve(result);
       }
     });
 
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
+    observer.observe(document.body, { childList: true, subtree: true });
 
     setTimeout(() => {
       observer.disconnect();
