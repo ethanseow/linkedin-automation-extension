@@ -55,17 +55,13 @@ async function handleSendWithoutNote() {
 
   sendWithoutNoteButton.click();
   await sleep(500);
-
-  const sendButton = document.querySelector('button[aria-label="Send now"], button[data-control-name="send"]');
-  if (!sendButton) throw new Error('Send button not found');
-
-  sendButton.click();
 }
 
 async function handleConnect(card) {
   await sleep(1000);
-  const connectButton = card.querySelector('button');
-  console.log('linkedin-automation: Connect button:', connectButton);
+  const connectButton = Array.from(card.querySelectorAll('button')).find(
+    btn => btn.textContent && btn.textContent.trim() === 'Connect'
+  );
 
   if (!connectButton || connectButton.disabled) throw new Error('Connect button not found');
 
@@ -77,11 +73,14 @@ async function processPerson(card, message) {
   console.log('linkedin-automation: Processing person:', card);
   const curriedHandleAddFreeNote = handleAddFreeNote.bind(null, message);
   const handlers = [curriedHandleAddFreeNote, handleSendWithoutNote];
+  let didConnect = false;
 
   for (const handler of handlers) {
     try {
       await handleConnect(card);
       await handler();
+      didConnect = true;
+      console.log('linkedin-automation: Person processed:', card);
       break;
     } catch (error) {
       console.log('linkedin-automation: Error processing person:', error);
@@ -89,9 +88,14 @@ async function processPerson(card, message) {
     }
   }
 
+  if (!didConnect) {
+    throw new Error('Did not connect to person');
+  }
+
   const closeButton = document.querySelector('button[aria-label="Dismiss"], button[data-control-name="close"]');
   if (!closeButton) throw new Error('Close button not found');
   closeButton.click();
+  
 }
 
 function getNextPageButton() {
@@ -113,12 +117,9 @@ async function navigateToNextPage() {
 
 async function processPeople(message, maxPeople) {
   let numProcessed = 0;
+  await sleep(3000);
   const peopleCards = document.querySelectorAll('.linked-area');
 
-  if (memory.firstCard === null) {
-    saveFirstCard(peopleCards[0]);
-  }
-  
   for (let i = 0; i < peopleCards.length && numProcessed < maxPeople; i++) {
     const card = peopleCards[i];
     console.log('linkedin-automation: Processing person:', card);
@@ -147,7 +148,7 @@ async function startAutomation(searchQuery, message, maxPeople = 20) {
 
 
   // TODO: wait for element seems to be stuck here, does not move on from this step when triggering the automation
-  await waitForElement('.search-results-container');
+  await querySelectorAllWithTimeout('.search-results-container');
   const numProcessed = await processPeople(message, maxPeople);
 
   if (isNextPageAvailable()) {
@@ -157,19 +158,20 @@ async function startAutomation(searchQuery, message, maxPeople = 20) {
   }
 }
 
-function waitForElement(selector, timeout = 10000) {
+function querySelectorAllWithTimeout(selector, minCount = 0, timeout = 3000) {
   return new Promise((resolve, reject) => {
-    const element = document.querySelector(selector);
-    if (element) {
-      resolve(element);
+    const element = document.querySelectorAll(selector);
+    if (element.length > minCount) {
+      console.log('linkedin-automation: Element found:', selector);
+      resolve(null);
       return;
     }
 
     const observer = new MutationObserver(() => {
-      const element = document.querySelector(selector);
-      if (element) {
+      const element = document.querySelectorAll(selector);
+      if (element.length > minCount) {
         observer.disconnect();
-        resolve(element);
+        resolve(null);
       }
     });
 
@@ -180,6 +182,7 @@ function waitForElement(selector, timeout = 10000) {
 
     setTimeout(() => {
       observer.disconnect();
+      console.log('linkedin-automation: Element not found after timeout:', selector);
       reject(new Error(`Element ${selector} not found`));
     }, timeout);
   });
