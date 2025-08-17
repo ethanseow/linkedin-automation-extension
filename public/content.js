@@ -1,3 +1,6 @@
+let observers = [];
+let timeouts = [];
+
 chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
   if (request.action !== 'startAutomation') return;
 
@@ -26,7 +29,7 @@ async function handleSendWithoutNote() {
 }
 
 async function handleConnect() {
-  const connectButton = await querySelectorWithTimeout('.linked-area button', 1, 1000);
+  const connectButton = await querySelectorWithTimeout('[aria-label*="Invite"]', 1, 1000);
   connectButton.click();
 }
 
@@ -53,26 +56,24 @@ async function connectWithPerson(personElement, message) {
     throw new Error('Did not connect to person');
   }
 
-  const closeButton = document.querySelector('button[aria-label="Dismiss"], button[data-control-name="close"]');
-  if (!closeButton) throw new Error('Close button not found');
+  const closeButton = await querySelectorWithTimeout('[aria-label="Dismiss"]', 1, 1000);
   closeButton.click();
 }
 
-function getNextPageButton() {
-  return document.querySelector('button[aria-label="Next"]');
-}
-
 function isNextPageAvailable() {
-  const nextPageButton = getNextPageButton();
+  const nextPageButton = querySelectorWithTimeout('button[aria-label="Next"]', 1, 1000);
   return nextPageButton && !nextPageButton.disabled;
 }
 
 async function navigateToNextPage() {
-  const nextPageButton = getNextPageButton();
-  if (!nextPageButton) throw new Error('Next page button not found');
-
+  const nextPageButton = await querySelectorWithTimeout('button[aria-label="Next"]', 1, 1000);
   nextPageButton.click();
-  await sleep(2000);
+
+  await sleep(5000)
+  observers.forEach(observer => observer && observer.disconnect());
+  timeouts.forEach(timeout => timeout && clearTimeout(timeout));
+  observers = [];
+  timeouts = [];
 }
 
 
@@ -81,7 +82,7 @@ async function connectWithPeople(message, maxPeople) {
 
   let peopleCards = [];
   try {
-    peopleCards = await querySelectorWithTimeout('.linked-area', 10, 10000);
+    peopleCards = await querySelectorWithTimeout('.linked-area:has(img):has([href])', 10, 3000);
   } catch (error) {
     console.log('linkedin-automation: Error getting people cards:', error);
     return 0;
@@ -130,12 +131,11 @@ function querySelectorWithTimeout(selector, minCount = 1, timeout = 3000) {
   const checkElements = () => {
     const elements = document.querySelectorAll(selector);
     if (elements.length >= minCount) {
-      console.log('linkedin-automation: Element found:', selector);
-      return minCount === 1 ? elements[0] : elements;
+      return minCount === 1 ? elements[0] : Array.from(elements);
     }
     return null;
   };
-  
+
   return new Promise((resolve, reject) => {
     const result = checkElements();
     if (result) return resolve(result);
@@ -150,11 +150,14 @@ function querySelectorWithTimeout(selector, minCount = 1, timeout = 3000) {
 
     observer.observe(document.body, { childList: true, subtree: true });
 
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       observer.disconnect();
       console.log('linkedin-automation: Element not found after timeout:', selector);
       reject(new Error(`Element ${selector} not found`));
     }, timeout);
+
+    observers.push(observer);
+    timeouts.push(timeoutId);
   });
 }
 
