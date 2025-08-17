@@ -8,28 +8,33 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
 });
 
 async function closeUpsellModal() {
-  const dismissButton = await querySelectorWithTimeout('[aria-label="Dismiss"]', 1, 1000);
-  dismissButton.click();
 }
 
 async function handleAddFreeNote(message) {
+  const dismissButton = await querySelectorWithTimeout('[aria-label="Dismiss"]', 1, 1000);
   const addFreeNoteButton = await querySelectorWithTimeout('[aria-label="Add a free note"]', 1, 1000);
-  addFreeNoteButton.click();
-  await closeUpsellModal();
   const messageInput = await querySelectorWithTimeout('textarea[name="message"], textarea[data-control-name="message"]', 1, 1000);
+  const sendButton = await querySelectorWithTimeout('button[aria-label="Send"]', 1, 1000);
+  addFreeNoteButton.click();
+  await sleep(500)
+  // Dismiss upsell modal
+  dismissButton.click();
+  await sleep(500)
   messageInput.value = message;
   messageInput.dispatchEvent(new Event('input', { bubbles: true }));
-  const sendButton = await querySelectorWithTimeout('button[aria-label="Send"]', 1, 1000);
+  await sleep(500)
   sendButton.click();
 }
 
 async function handleSendWithoutNote() {
   const sendWithoutNoteButton = await querySelectorWithTimeout('button[aria-label="Send without a note"]', 1, 1000);
+  await sleep(500)
   sendWithoutNoteButton.click();
 }
 
 async function handleConnect() {
   const connectButton = await querySelectorWithTimeout('[aria-label*="Invite"]', 1, 1000);
+  await sleep(500)
   connectButton.click();
 }
 
@@ -69,7 +74,7 @@ async function navigateToNextPage() {
   const nextPageButton = await querySelectorWithTimeout('button[aria-label="Next"]', 1, 1000);
   nextPageButton.click();
 
-  await sleep(5000)
+  await sleep(3000)
   observers.forEach(observer => observer && observer.disconnect());
   timeouts.forEach(timeout => timeout && clearTimeout(timeout));
   observers = [];
@@ -82,7 +87,7 @@ async function connectWithPeople(message, maxPeople) {
 
   let peopleCards = [];
   try {
-    peopleCards = await querySelectorWithTimeout('.linked-area:has(img):has([href])', 10, 3000);
+    peopleCards = await querySelectorWithTimeout('.linked-area', 10, 3000);
   } catch (error) {
     console.log('linkedin-automation: Error getting people cards:', error);
     return 0;
@@ -93,6 +98,7 @@ async function connectWithPeople(message, maxPeople) {
     const card = peopleCards[i];
     console.log('linkedin-automation: Processing person:', card);
     try {
+      await sleep(500)
       await connectWithPerson(card, message);
       numConnected++;
     } catch (error) {
