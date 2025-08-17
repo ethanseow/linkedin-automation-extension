@@ -23,7 +23,7 @@ async function handleAddFreeNote(message) {
   if (!addFreeNoteButton) throw new Error('Add free note button not found');
 
   addFreeNoteButton.click();
-  await sleep(500);
+  await sleep(1000);
 
   const upsellModal = document.querySelector('.modal-upsell');
   if (upsellModal) {
@@ -36,7 +36,7 @@ async function handleAddFreeNote(message) {
 
   messageInput.value = message;
   messageInput.dispatchEvent(new Event('input', { bubbles: true }));
-  await sleep(500);
+  await sleep(1000);
 
   const sendButton = Array.from(document.querySelectorAll('button')).find(
     btn => btn.textContent && btn.textContent.trim() === 'Send'
@@ -57,9 +57,9 @@ async function handleSendWithoutNote() {
   await sleep(500);
 }
 
-async function handleConnect(card) {
+async function handleConnect(personElement) {
   await sleep(1000);
-  const connectButton = Array.from(card.querySelectorAll('button')).find(
+  const connectButton = Array.from(personElement.querySelectorAll('button')).find(
     btn => btn.textContent && btn.textContent.trim() === 'Connect'
   );
 
@@ -69,18 +69,18 @@ async function handleConnect(card) {
   await sleep(1000);
 }
 
-async function processPerson(card, message) {
-  console.log('linkedin-automation: Processing person:', card);
+async function connectWithPerson(personElement, message) {
+  console.log('linkedin-automation: Processing person:', personElement);
   const curriedHandleAddFreeNote = handleAddFreeNote.bind(null, message);
   const handlers = [curriedHandleAddFreeNote, handleSendWithoutNote];
   let didConnect = false;
 
   for (const handler of handlers) {
     try {
-      await handleConnect(card);
+      await handleConnect(personElement);
       await handler();
       didConnect = true;
-      console.log('linkedin-automation: Person processed:', card);
+      console.log('linkedin-automation: Person processed:', personElement);
       break;
     } catch (error) {
       console.log('linkedin-automation: Error processing person:', error);
@@ -95,7 +95,6 @@ async function processPerson(card, message) {
   const closeButton = document.querySelector('button[aria-label="Dismiss"], button[data-control-name="close"]');
   if (!closeButton) throw new Error('Close button not found');
   closeButton.click();
-  
 }
 
 function getNextPageButton() {
@@ -115,24 +114,27 @@ async function navigateToNextPage() {
   await sleep(2000);
 }
 
-async function processPeople(message, maxPeople) {
-  let numProcessed = 0;
+async function connectWithPeople(message, maxPeople) {
+  let numConnected = 0;
+
+  // Wait for page to load and get all people cards
+  // TODO: refactor code to handle dynamic loading of HTML
   await sleep(3000);
   const peopleCards = document.querySelectorAll('.linked-area');
 
-  for (let i = 0; i < peopleCards.length && numProcessed < maxPeople; i++) {
+  for (let i = 0; i < peopleCards.length && numConnected < maxPeople; i++) {
     const card = peopleCards[i];
     console.log('linkedin-automation: Processing person:', card);
     try {
-      await processPerson(card, message);
-      numProcessed++;
+      await connectWithPerson(card, message);
+      numConnected++;
     } catch (error) {
       continue;
     }
   }
 
-  console.log(`linkedin-automation: We processed ${numProcessed} people out of ${peopleCards.length}`);
-  return numProcessed;
+  console.log(`linkedin-automation: We processed ${numConnected} people out of ${peopleCards.length}`);
+  return numConnected;
 }
 
 async function startAutomation(searchQuery, message, maxPeople = 20) {
@@ -149,11 +151,11 @@ async function startAutomation(searchQuery, message, maxPeople = 20) {
 
   // TODO: wait for element seems to be stuck here, does not move on from this step when triggering the automation
   await querySelectorAllWithTimeout('.search-results-container');
-  const numProcessed = await processPeople(message, maxPeople);
+  const numProcessed = await connectWithPeople(message, maxPeople);
 
   if (isNextPageAvailable()) {
-    await navigateToNextPage();
     if(maxPeople - numProcessed <= 0) { return; }
+    await navigateToNextPage();
     await startAutomation(searchQuery, message, maxPeople - numProcessed);
   }
 }
