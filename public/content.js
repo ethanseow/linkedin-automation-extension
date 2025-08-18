@@ -10,7 +10,7 @@ function alertUI(action, message) {
 
 chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
   if (request.action === 'startAutomation') {
-    await startAutomation(request.searchQuery, request.message);
+    await startAutomation(request.searchQuery, request.message, request.peopleCount);
   }
 });
 

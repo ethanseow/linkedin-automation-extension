@@ -54,17 +54,22 @@ function App() {
     setAlertState(null)
     
     try {
+      // TODO: perhaps navigating to a new tab causes issues with the extension sending messages to the wrong tab
+      let newTabId = null
       const searchUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(searchQuery)}`;
       const [tab] = await window.chrome.tabs.query({ active: true, currentWindow: true })
       
       if (!tab.url?.includes(searchUrl)) {
         await window.chrome.tabs.update(tab.id, { url: searchUrl })
+        const [newTab] = await window.chrome.tabs.query({ active: true, currentWindow: true })
+        newTabId = newTab.id
       }
 
+      // TODO: it gets stuck here when I am on chrome://extensions and I use extension as normal   
       await new Promise(resolve => setTimeout(resolve, 5000))
       
       console.log('linkedin-automation: Sending message to tab:', tab.id)
-      await window.chrome.tabs.sendMessage(tab.id, {
+      await window.chrome.tabs.sendMessage(newTabId ?? tab.id, {
         action: 'startAutomation',
         searchQuery,
         message,
