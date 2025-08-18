@@ -1,14 +1,23 @@
 let observers = [];
 let timeouts = [];
 
-chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
-  if (request.action !== 'startAutomation') return;
 
-  await startAutomation(request.searchQuery, request.message);
+window.addEventListener('load', async () => {
+  chrome.storage.local.get('automationSettings', async (result) => {
+    if (result.automationSettings) {
+      const { searchQuery, message, maxPeople } = result.automationSettings;
+      await chrome.storage.local.remove('automationSettings');
+      await startAutomation(searchQuery, message, maxPeople);
+    }
+  });
 });
 
-async function closeUpsellModal() {
-}
+chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
+  if (request.action === 'startAutomation') {
+    await startAutomation(request.searchQuery, request.message);
+  }
+});
+
 
 async function handleAddFreeNote(message) {
   const dismissButton = await querySelectorWithTimeout('[aria-label="Dismiss"]', 1, 1000);
@@ -40,7 +49,7 @@ async function handleConnect() {
 
 async function connectWithPerson(personElement, message) {
   console.log('linkedin-automation: Processing person:', personElement);
-  const curriedHandleAddFreeNote = handleAddFreeNote.bind(null, message);
+  const curriedHandleAddFreeNote = message.length > 0 ? handleAddFreeNote.bind(null, message) : async () => {};
   const handlers = [curriedHandleAddFreeNote, handleSendWithoutNote];
   let didConnect = false;
 
@@ -110,19 +119,27 @@ async function connectWithPeople(message, maxPeople) {
   return numConnected;
 }
 
+async function saveAutomationSettings(searchQuery, message, maxPeople) {
+  await chrome.storage.local.set({
+    automationSettings: {
+      searchQuery,
+      message,
+      maxPeople
+    }
+  });
+}
+
 async function startAutomation(searchQuery, message, maxPeople = 20) {
   console.log('linkedin-automation: Starting automation');
   const searchUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(searchQuery)}`;
 
-  // TODO: refactor code for navigating to correct search results page
-  // if (!window.location.href.includes(`/search/results/people/?keywords=${encodeURIComponent(searchQuery)}`)) {
-  //   await saveAutomationSettings(searchQuery, message, maxPeople);
-  //   window.location.href = searchUrl;
-  //   return;
-  // }
+  if (!window.location.href.includes(`/search/results/people/?keywords=${encodeURIComponent(searchQuery)}`)) {
+    await saveAutomationSettings(searchQuery, message, maxPeople);
+    window.location.href = searchUrl;
+    return;
+  }
 
 
-  // TODO: wait for element seems to be stuck here, does not move on from this step when triggering the automation
   await querySelectorWithTimeout('.search-results-container',1,5000);
   const numProcessed = await connectWithPeople(message, maxPeople);
 
@@ -169,4 +186,8 @@ function querySelectorWithTimeout(selector, minCount = 1, timeout = 3000) {
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function developConnection() {
+  console.log('Hello world');
 } 
