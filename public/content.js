@@ -1,22 +1,25 @@
 let observers = [];
 let timeouts = [];
 
-
-window.addEventListener('load', async () => {
-  chrome.storage.local.get('automationSettings', async (result) => {
-    if (result.automationSettings) {
-      const { searchQuery, message, maxPeople } = result.automationSettings;
-      await chrome.storage.local.remove('automationSettings');
-      await startAutomation(searchQuery, message, maxPeople);
-    }
+function alertUI(action, message) {
+  chrome.runtime.sendMessage({
+    action,
+    message
   });
-});
+}
 
 chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
   if (request.action === 'startAutomation') {
     await startAutomation(request.searchQuery, request.message);
   }
 });
+
+function alertUI(type, message) {
+  chrome.runtime.sendMessage({
+    action: type,
+    message
+  });
+}
 
 
 async function handleAddFreeNote(message) {
@@ -119,34 +122,27 @@ async function connectWithPeople(message, maxPeople) {
   return numConnected;
 }
 
-async function saveAutomationSettings(searchQuery, message, maxPeople) {
-  await chrome.storage.local.set({
-    automationSettings: {
-      searchQuery,
-      message,
-      maxPeople
-    }
-  });
-}
-
 async function startAutomation(searchQuery, message, maxPeople = 20) {
   console.log('linkedin-automation: Starting automation');
-  const searchUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(searchQuery)}`;
 
-  if (!window.location.href.includes(`/search/results/people/?keywords=${encodeURIComponent(searchQuery)}`)) {
-    await saveAutomationSettings(searchQuery, message, maxPeople);
-    window.location.href = searchUrl;
+  try {
+    await querySelectorWithTimeout('.search-results-container',1,5000);
+  } catch (error) {
+    alertUI('error', 'Automation Failed: Could not find search container');
     return;
   }
 
-
-  await querySelectorWithTimeout('.search-results-container',1,5000);
   const numProcessed = await connectWithPeople(message, maxPeople);
 
-  if (isNextPageAvailable()) {
-    if(maxPeople - numProcessed <= 0) { return; }
+  if (isNextPageAvailable() && maxPeople - numProcessed > 0) {
     await navigateToNextPage();
     await startAutomation(searchQuery, message, maxPeople - numProcessed);
+  } else {
+    if (numProcessed < maxPeople) {
+      alertUI('warning', `${numProcessed} out of ${maxPeople} processed, no more further to connect to`);
+    } else {
+      alertUI('success', `All ${maxPeople} processed`);
+    }
   }
 }
 

@@ -12,6 +12,33 @@ h2 {
   font-weight: 400;
 }
 
+.alert {
+  padding: 8px 12px;
+  margin-bottom: 16px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  border: 1px solid;
+}
+
+.alert-success {
+  background-color: #f0f9f3;
+  color: #2d7738;
+  border-color: #22c55e;
+}
+
+.alert-warning {
+  background-color: #fffbeb;
+  color: #92400e;
+  border-color: #f59e0b;
+}
+
+.alert-error {
+  background-color: #fef2f2;
+  color: #dc2626;
+  border-color: #ef4444;
+}
+
 .form-group {
   margin-bottom: 15px;
 }
