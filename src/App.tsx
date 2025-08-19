@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import './App.css'
 
 declare global {
@@ -14,66 +14,110 @@ function App() {
   const [peopleCount, setPeopleCount] = useState(20)
   const [isRunning, setIsRunning] = useState(false)
   const [alertState, setAlertState] = useState<{type: string, message: string} | null>(null)
-
+  
   useEffect(() => {
+    window.chrome.storage.local.get('alert', (result: any) => {
+      if (result.alert) {
+        setAlertState({ type: result.alert.type, message: result.alert.message })
+      }
+    })
 
+    window.chrome.storage.local.get('isRunning', (result: any) => {
+      if (result.isRunning) {
+        setIsRunning(true)
+      }
+    })
     window.chrome.storage.onChanged.addListener(handleAlertMessages)
-    
     return () => {
       window.chrome.storage.onChanged.removeListener(handleAlertMessages)
     }
   }, [])
+
+  const setRunningState = async (state: boolean) => {
+    setIsRunning(state)
+    window.chrome.storage.local.set({ isRunning: state })
+  }
+
+  const clearAlertState = async () => {
+    await window.chrome.storage.local.remove('alert')
+    setAlertState(null)
+  }
 
   const handleAlertMessages = (changes: any) => {
     if (changes.alert) {
       const newAlert = changes.alert.newValue
       if (newAlert) {
         setAlertState({ type: newAlert.type, message: newAlert.message })
-        setIsRunning(false)
+        setRunningState(false)
       }
     }
   }
 
-  const handleStartAutomation = async () => {
+  const validateInputs = () => {
     if (!searchQuery.trim()) {
-      alert('Please fill in both search query and message')
-      return
+      throw new Error('Please fill in the search query')
     }
-
     if (peopleCount < 1 || peopleCount > 100) {
-      alert('Please enter a valid number of people (1-100)')
-      return
+      throw new Error('Please enter a valid number of people (1-100).')
     }
+  }
 
-    setIsRunning(true)
-    setAlertState(null)
+  const buildSearchUrl = (query: string) => 
+    `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(query)}`
+
+  const navigateToLinkedInSearch = async (searchUrl: string) => {
+    const [currentTab] = await window.chrome.tabs.query({ active: true, currentWindow: true })
     
-    try {
-      // TODO: perhaps navigating to a new tab causes issues with the extension sending messages to the wrong tab
-      let newTabId = null
-      const searchUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(searchQuery)}`;
-      const [tab] = await window.chrome.tabs.query({ active: true, currentWindow: true })
-      
-      if (!tab.url?.includes(searchUrl)) {
-        await window.chrome.tabs.update(tab.id, { url: searchUrl })
-        const [newTab] = await window.chrome.tabs.query({ active: true, currentWindow: true })
-        newTabId = newTab.id
-      }
+    if (!currentTab.url?.includes(searchUrl)) {
+      // await window.chrome.tabs.update(currentTab.id, { url: searchUrl })
+      // const [newTab] = await window.chrome.tabs.query({ active: true, currentWindow: true })
+      // return newTab.id
+    }
+    return currentTab.id
+  }
 
-      // TODO: it gets stuck here when I am on chrome://extensions and I use extension as normal   
-      await new Promise(resolve => setTimeout(resolve, 5000))
+  const sendAutomationMessage = useCallback(async (tabId: number) => {
+    await window.chrome.runtime.sendMessage({
+      action: 'trackAutomationTab',
+      tabId: tabId
+    })
+    const retries = 3
+    for (let i = 0; i < retries; i++) {
+      try {
+        await window.chrome.tabs.sendMessage(tabId, {
+          action: 'startAutomation',
+          searchQuery,
+          message,
+          peopleCount
+        })
+        return // Success
+      } catch (error) {
+        if (i === retries - 1) throw error
+          await new Promise(resolve => setTimeout(resolve, 1000))
+        }
+    }
+  }, [searchQuery, message, peopleCount])
+
+  const handleAutomationError = (error: any) => {
+    console.log('linkedin-automation: Error starting automation:', error)
+    setRunningState(false)
+    setAlertState({ type: 'error', message: error.message || 'Error starting automation. Please try again.' })
+  }
+
+  const handleStartAutomation = async () => {
+    try {
+      validateInputs()
+      await setRunningState(true)
+      await clearAlertState()
       
-      console.log('linkedin-automation: Sending message to tab:', tab.id)
-      await window.chrome.tabs.sendMessage(newTabId ?? tab.id, {
-        action: 'startAutomation',
-        searchQuery,
-        message,
-        peopleCount
-      })
+      const searchUrl = buildSearchUrl(searchQuery)
+      const tabId = await navigateToLinkedInSearch(searchUrl)
+
+      console.log('linkedin-automation: Sending message to tab:', tabId)
+      await sendAutomationMessage(tabId)
+      console.log('linkedin-automation: Message sent to tab:', tabId)
     } catch (error) {
-      console.error('linkedin-automation: Error starting automation:', error)
-      alert('Error starting automation. Please try again.')
-      setIsRunning(false)
+      handleAutomationError(error)
     }
   }
 
