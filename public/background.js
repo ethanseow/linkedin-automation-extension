@@ -1,36 +1,23 @@
-let automationTabId = null;
+const handleTabChange = async (tabId) => {
+  const { automationTabId } = await chrome.storage.session.get('automationTabId');
+  if (automationTabId && automationTabId === tabId) {
+    await chrome.storage.session.clear();
+  }
+}
 
-chrome.runtime.onInstalled.addListener(() => {
-  console.log('LinkedIn Automation Extension installed');
-});
-
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
   if (message.action === 'alertUI') {
-    chrome.storage.local.set({
+    chrome.storage.session.set({
       alert: {
         type: message.type,
         message: message.message,
       }
     });
   }
-  
-  if (message.action === 'trackAutomationTab') {
-    automationTabId = message.tabId;
+  if (message.action === 'saveCurrentTab') {
+    await chrome.storage.session.set({ automationTabId: sender.tab.id });
   }
 });
 
-chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
-  if (tabId === automationTabId) {
-    chrome.storage.local.remove('alert');
-    chrome.storage.local.set({ isRunning: false });
-    automationTabId = null;
-  }
-});
-
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (tabId === automationTabId) {
-    chrome.storage.local.remove('alert');
-    chrome.storage.local.set({ isRunning: false });
-    automationTabId = null;
-  }
-});
+chrome.tabs.onRemoved.addListener(handleTabChange);
+chrome.tabs.onUpdated.addListener(handleTabChange);

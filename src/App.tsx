@@ -16,13 +16,13 @@ function App() {
   const [alertState, setAlertState] = useState<{type: string, message: string} | null>(null)
   
   useEffect(() => {
-    window.chrome.storage.local.get('alert', (result: any) => {
+    window.chrome.storage.session.get('alert', (result: any) => {
       if (result.alert) {
         setAlertState({ type: result.alert.type, message: result.alert.message })
       }
     })
 
-    window.chrome.storage.local.get('isRunning', (result: any) => {
+    window.chrome.storage.session.get('isRunning', (result: any) => {
       if (result.isRunning) {
         setIsRunning(true)
       }
@@ -35,21 +35,23 @@ function App() {
 
   const setRunningState = async (state: boolean) => {
     setIsRunning(state)
-    window.chrome.storage.local.set({ isRunning: state })
+    window.chrome.storage.session.set({ isRunning: state })
   }
 
   const clearAlertState = async () => {
-    await window.chrome.storage.local.remove('alert')
+    await window.chrome.storage.session.remove('alert')
     setAlertState(null)
   }
 
   const handleAlertMessages = (changes: any) => {
     if (changes.alert) {
       const newAlert = changes.alert.newValue
-      if (newAlert) {
-        setAlertState({ type: newAlert.type, message: newAlert.message })
-        setRunningState(false)
+      if(newAlert === null) {
+        setAlertState(null)
+        return
       }
+      setAlertState({ type: newAlert.type, message: newAlert.message })
+      setRunningState(false)
     }
   }
 
@@ -69,18 +71,12 @@ function App() {
     const [currentTab] = await window.chrome.tabs.query({ active: true, currentWindow: true })
     
     if (!currentTab.url?.includes(searchUrl)) {
-      // await window.chrome.tabs.update(currentTab.id, { url: searchUrl })
-      // const [newTab] = await window.chrome.tabs.query({ active: true, currentWindow: true })
-      // return newTab.id
+      await window.chrome.tabs.update(currentTab.id, { url: searchUrl })
     }
     return currentTab.id
   }
 
   const sendAutomationMessage = useCallback(async (tabId: number) => {
-    await window.chrome.runtime.sendMessage({
-      action: 'trackAutomationTab',
-      tabId: tabId
-    })
     const retries = 3
     for (let i = 0; i < retries; i++) {
       try {

@@ -3,6 +3,8 @@ let timeouts = [];
 
 chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
   if (request.action === 'startAutomation') {
+
+    await chrome.runtime.sendMessage({action: 'saveCurrentTab'});
     await startAutomation(request.searchQuery, request.message, request.peopleCount);
   }
 });
