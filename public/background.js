@@ -8,7 +8,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       alert: {
         type: message.type,
         message: message.message,
-        timestamp: Date.now()
       }
     });
   }

@@ -1,26 +1,19 @@
 let observers = [];
 let timeouts = [];
 
-function alertUI(action, message) {
-  chrome.runtime.sendMessage({
-    action,
-    message
-  });
-}
-
 chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
   if (request.action === 'startAutomation') {
     await startAutomation(request.searchQuery, request.message, request.peopleCount);
   }
 });
 
-function alertUI(type, message) {
+function alertUI(alertData) {
   chrome.runtime.sendMessage({
-    action: type,
-    message
+    action: 'alertUI',
+    type: alertData.type,
+    message: alertData.message
   });
 }
-
 
 async function handleAddFreeNote(message) {
   const dismissButton = await querySelectorWithTimeout('[aria-label="Dismiss"]', 1, 1000);
@@ -77,9 +70,13 @@ async function connectWithPerson(personElement, message) {
   closeButton.click();
 }
 
-function isNextPageAvailable() {
-  const nextPageButton = querySelectorWithTimeout('button[aria-label="Next"]', 1, 1000);
-  return nextPageButton && !nextPageButton.disabled;
+async function isNextPageAvailable() {
+  try { 
+    const nextPageButton = await querySelectorWithTimeout('button[aria-label="Next"]', 1, 1000);
+    return !nextPageButton.disabled;
+  } catch (error) {
+    return false;
+  }
 }
 
 async function navigateToNextPage() {
@@ -122,26 +119,42 @@ async function connectWithPeople(message, maxPeople) {
   return numConnected;
 }
 
+async function isProfileLimitReached() {
+  let searchResultsPromo = null;
+  try{
+    searchResultsPromo = await querySelectorWithTimeout('div[data-view-name=search-results-promo]',1,5000);
+  } catch (error) {
+    return false;
+  }
+  const searchResultsPromoText = searchResultsPromo?.textContent;
+  return searchResultsPromoText && searchResultsPromoText.includes('reached the monthly limit for profile searches');
+}
+
 async function startAutomation(searchQuery, message, maxPeople = 20) {
   console.log('linkedin-automation: Starting automation');
+
+  if (await isProfileLimitReached()) {
+    alertUI({type: 'error', message: 'Automation Failed: You’ve reached the monthly limit for profile searches.'});
+    return;
+  }
 
   try {
     await querySelectorWithTimeout('.search-results-container',1,5000);
   } catch (error) {
-    alertUI('error', 'Automation Failed: Could not find search container');
+    alertUI({type: 'error', message: 'Automation Failed: Could not find search container'});
     return;
   }
 
   const numProcessed = await connectWithPeople(message, maxPeople);
 
-  if (isNextPageAvailable() && maxPeople - numProcessed > 0) {
+  if (await isNextPageAvailable() && maxPeople - numProcessed > 0) {
     await navigateToNextPage();
     await startAutomation(searchQuery, message, maxPeople - numProcessed);
   } else {
     if (numProcessed < maxPeople) {
-      alertUI('warning', `${numProcessed} out of ${maxPeople} processed, no more further to connect to`);
+      alertUI({type: 'warning', message: `${numProcessed} out of ${maxPeople} processed, no more further to connect to`});
     } else {
-      alertUI('success', `All ${maxPeople} processed`);
+      alertUI({type: 'success', message: `All ${maxPeople} processed`});
     }
   }
 }
@@ -183,7 +196,3 @@ function querySelectorWithTimeout(selector, minCount = 1, timeout = 3000) {
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
-
-async function developConnection() {
-  console.log('Hello world');
-} 

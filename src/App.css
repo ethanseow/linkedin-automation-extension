@@ -13,30 +13,28 @@ h2 {
 }
 
 .alert {
+  text-align: center;
   padding: 8px 12px;
-  margin-bottom: 16px;
-  border-radius: 6px;
+  margin: 8px 0px;
   font-size: 12px;
   font-weight: 400;
-  border: 1px solid;
+  border: 1px solid #000000;
+  border-radius: 4px;
 }
 
 .alert-success {
-  background-color: #f0f9f3;
-  color: #2d7738;
-  border-color: #22c55e;
+  background-color: #2d7738;
+  color: #ffffff;
 }
 
 .alert-warning {
-  background-color: #fffbeb;
-  color: #92400e;
-  border-color: #f59e0b;
+  background-color: #fbbf24;
+  color: #ffffff;
 }
 
 .alert-error {
-  background-color: #fef2f2;
-  color: #dc2626;
-  border-color: #ef4444;
+  background-color: #dc2626;
+  color: #ffffff;
 }
 
 .form-group {

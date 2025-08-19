@@ -30,11 +30,6 @@ function App() {
       if (newAlert) {
         setAlertState({ type: newAlert.type, message: newAlert.message })
         setIsRunning(false)
-        
-        setTimeout(() => {
-          setAlertState(null)
-          window.chrome.storage.local.remove('alert')
-        }, 5000)
       }
     }
   }
@@ -86,11 +81,6 @@ function App() {
     <div className="app">
       <h2>LinkedIn Automation</h2>
       
-      {alertState && (
-        <div className={`alert alert-${alertState.type}`}>
-          {alertState.message}
-        </div>
-      )}
       
       <div className="form-group">
         <label>Search Query:</label>
@@ -143,6 +133,12 @@ function App() {
       >
         {isRunning ? 'Running...' : 'Start Automation'}
       </button>
+
+      {alertState && (
+        <div className={`alert alert-${alertState.type}`}>
+          {alertState.message}
+        </div>
+      )}
     </div>
   )
 }
