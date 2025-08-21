@@ -66,10 +66,13 @@ function App() {
         })
         return
       } catch (error) {
-        if (i === retries - 1) throw error
-          await new Promise(resolve => setTimeout(resolve, 1000))
+        if (i === retries - 1) {
+          throw error
         }
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
     }
+    throw new Error('Failed to start automation')
   }, [searchQuery, message, peopleCount])
 
   const handleAutomationError = (error: any) => {

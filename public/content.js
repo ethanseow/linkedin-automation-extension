@@ -118,6 +118,7 @@ async function connectWithPeople(message, maxPeople) {
   return numConnected;
 }
 
+// TODO: refine this search function: it may be that .search-results-container shows up but text content is not loaded yet
 async function areSearchResultsAvailable() {
   let searchResults = null;
   try {

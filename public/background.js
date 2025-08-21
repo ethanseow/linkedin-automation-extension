@@ -1,3 +1,4 @@
+// TODO: use typescript
 // TODO: make sure everything is atomic
 const waitForTab = (tabId, timeout = 10000) => {
   return new Promise((resolve, reject) => {
@@ -42,6 +43,8 @@ const handleAlert = async (message) => {
     },
     isRunning: false
   });
+  
+  // TODO: make this portion atomic
   await chrome.storage.session.set({ isRunning: false });
   await chrome.storage.session.set({
     alert: {
@@ -58,6 +61,7 @@ const handleTabChange = async (tabId) => {
   }
 }
 
+// TODO: make sure message has a type when we have typescript
 const handleStartAutomation = async (message) => {
   try {
     const tab = await chrome.tabs.get(message.tabId);
@@ -68,6 +72,7 @@ const handleStartAutomation = async (message) => {
       await waitForTab(message.tabId, 10000);
     }
     
+    // TODO: make this portion atomic
     await chrome.storage.session.set({ automationTabId: message.tabId});
     await chrome.storage.session.set({ isRunning: true });
     // TODO: fix issue where "0 out of 20" is shown when you go from non-linkedin tab to linkedin-tab
