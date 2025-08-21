@@ -1,8 +1,6 @@
 let observers = [];
 let timeouts = [];
 
-
-// TODO: does not have receiving end content.js when navigating to linkedin page and sending message to startAutomation
 chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
   if (request.action === 'startAutomation') {
     await startAutomation(request.searchQuery, request.message, request.peopleCount);

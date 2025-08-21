@@ -14,13 +14,11 @@ function App() {
         setAlertState({ type: result.alert.type, message: result.alert.message })
       }
     })
-    // TODO: get immediate feedback from content.js when the automation is running
     window.chrome.storage.session.get('isRunning', (result: any) => {
       if (result.isRunning) {
         setIsRunning(result.isRunning)
       }
     })
-    // TODO: get immediate feedback from content.js when the automation is running
     window.chrome.runtime.onMessage.addListener(handleMessage)
     return () => {
       window.chrome.runtime.onMessage.removeListener(handleMessage)

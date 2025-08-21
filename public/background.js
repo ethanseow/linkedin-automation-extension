@@ -68,8 +68,9 @@ const handleStartAutomation = async (message) => {
       await waitForTab(message.tabId, 10000);
     }
     
-    await chrome.storage.session.set({ automationTabId: message.automationTabId });
-    await chrome.storage.session.set({ isRunning: message.isRunning });
+    await chrome.storage.session.set({ automationTabId: message.tabId});
+    await chrome.storage.session.set({ isRunning: true });
+    // TODO: fix issue where "0 out of 20" is shown when you go from non-linkedin tab to linkedin-tab
     await chrome.tabs.sendMessage(message.tabId, {
       action: 'startAutomation',
       tabId: message.tabId,
