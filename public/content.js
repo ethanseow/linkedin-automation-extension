@@ -1,10 +1,10 @@
 let observers = [];
 let timeouts = [];
 
+
+// TODO: does not have receiving end content.js when navigating to linkedin page and sending message to startAutomation
 chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
   if (request.action === 'startAutomation') {
-
-    await chrome.runtime.sendMessage({action: 'saveCurrentTab'});
     await startAutomation(request.searchQuery, request.message, request.peopleCount);
   }
 });
@@ -24,7 +24,6 @@ async function handleAddFreeNote(message) {
   const sendButton = await querySelectorWithTimeout('button[aria-label="Send"]', 1, 1000);
   addFreeNoteButton.click();
   await sleep(500)
-  // Dismiss upsell modal
   dismissButton.click();
   await sleep(500)
   messageInput.value = message;
@@ -121,29 +120,32 @@ async function connectWithPeople(message, maxPeople) {
   return numConnected;
 }
 
-async function isProfileLimitReached() {
-  let searchResultsPromo = null;
-  try{
-    searchResultsPromo = await querySelectorWithTimeout('div[data-view-name=search-results-promo]',1,5000);
+async function areSearchResultsAvailable() {
+  let searchResults = null;
+  try {
+    searchResults = await querySelectorWithTimeout('.search-results-container',1,10000);
   } catch (error) {
+    alertUI({type: 'error', message: 'Automation Failed: Could not find search container'});
     return false;
   }
-  const searchResultsPromoText = searchResultsPromo?.textContent;
-  return searchResultsPromoText && searchResultsPromoText.includes('reached the monthly limit for profile searches');
+
+  const textContent = searchResults.textContent;
+
+  if (textContent.includes('reached the monthly limit for profile searches')) {
+    alertUI({type: 'error', message: 'Automation Failed: You\'ve reached the monthly limit for profile searches.'});
+    return false;
+  } else if(textContent.includes('No results found')) {
+    alertUI({type: 'error', message: 'Automation Failed: No results found.'});
+    return false;
+  }
+
+  return true;
 }
 
 async function startAutomation(searchQuery, message, maxPeople = 20) {
   console.log('linkedin-automation: Starting automation');
 
-  if (await isProfileLimitReached()) {
-    alertUI({type: 'error', message: 'Automation Failed: You’ve reached the monthly limit for profile searches.'});
-    return;
-  }
-
-  try {
-    await querySelectorWithTimeout('.search-results-container',1,5000);
-  } catch (error) {
-    alertUI({type: 'error', message: 'Automation Failed: Could not find search container'});
+  if (!await areSearchResultsAvailable()) {
     return;
   }
 

@@ -1,13 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import './App.css'
 
-declare global {
-  interface Window {
-    chrome: any
-  }
-}
-
-
 function App() {
   const [searchQuery, setSearchQuery] = useState('crypto')
   const [message, setMessage] = useState('Hi!')
@@ -21,37 +14,27 @@ function App() {
         setAlertState({ type: result.alert.type, message: result.alert.message })
       }
     })
-
+    // TODO: get immediate feedback from content.js when the automation is running
     window.chrome.storage.session.get('isRunning', (result: any) => {
       if (result.isRunning) {
-        setIsRunning(true)
+        setIsRunning(result.isRunning)
       }
     })
-    window.chrome.storage.onChanged.addListener(handleAlertMessages)
+    // TODO: get immediate feedback from content.js when the automation is running
+    window.chrome.runtime.onMessage.addListener(handleMessage)
     return () => {
-      window.chrome.storage.onChanged.removeListener(handleAlertMessages)
+      window.chrome.runtime.onMessage.removeListener(handleMessage)
     }
   }, [])
 
-  const setRunningState = async (state: boolean) => {
-    setIsRunning(state)
-    window.chrome.storage.session.set({ isRunning: state })
+  const handleUpdate = (message: any) => {
+    setIsRunning(message.isRunning)
+    setAlertState({ type: message.alert.type, message: message.alert.message })
   }
 
-  const clearAlertState = async () => {
-    await window.chrome.storage.session.remove('alert')
-    setAlertState(null)
-  }
-
-  const handleAlertMessages = (changes: any) => {
-    if (changes.alert) {
-      const newAlert = changes.alert.newValue
-      if(newAlert === null) {
-        setAlertState(null)
-        return
-      }
-      setAlertState({ type: newAlert.type, message: newAlert.message })
-      setRunningState(false)
+  const handleMessage = (message: any) => {
+    if (message.action === 'update') {
+      handleUpdate(message)
     }
   }
 
@@ -64,29 +47,26 @@ function App() {
     }
   }
 
-  const buildSearchUrl = (query: string) => 
-    `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(query)}`
-
-  const navigateToLinkedInSearch = async (searchUrl: string) => {
+  const getCurrentTabId = async () => {
     const [currentTab] = await window.chrome.tabs.query({ active: true, currentWindow: true })
-    
-    if (!currentTab.url?.includes(searchUrl)) {
-      await window.chrome.tabs.update(currentTab.id, { url: searchUrl })
+    if (!currentTab.id) {
+      throw new Error('No active tab found')
     }
     return currentTab.id
   }
 
-  const sendAutomationMessage = useCallback(async (tabId: number) => {
+  const startAutomation = useCallback(async (tabId: number) => {
     const retries = 3
     for (let i = 0; i < retries; i++) {
       try {
-        await window.chrome.tabs.sendMessage(tabId, {
+        await window.chrome.runtime.sendMessage({
           action: 'startAutomation',
+          tabId,
           searchQuery,
           message,
           peopleCount
         })
-        return // Success
+        return
       } catch (error) {
         if (i === retries - 1) throw error
           await new Promise(resolve => setTimeout(resolve, 1000))
@@ -96,21 +76,20 @@ function App() {
 
   const handleAutomationError = (error: any) => {
     console.log('linkedin-automation: Error starting automation:', error)
-    setRunningState(false)
+    setIsRunning(false)
     setAlertState({ type: 'error', message: error.message || 'Error starting automation. Please try again.' })
   }
 
   const handleStartAutomation = async () => {
     try {
       validateInputs()
-      await setRunningState(true)
-      await clearAlertState()
+      setIsRunning(true)
+      setAlertState(null)
       
-      const searchUrl = buildSearchUrl(searchQuery)
-      const tabId = await navigateToLinkedInSearch(searchUrl)
+      const tabId = await getCurrentTabId()
 
       console.log('linkedin-automation: Sending message to tab:', tabId)
-      await sendAutomationMessage(tabId)
+      await startAutomation(tabId)
       console.log('linkedin-automation: Message sent to tab:', tabId)
     } catch (error) {
       handleAutomationError(error)
