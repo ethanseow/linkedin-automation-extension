@@ -1,23 +1,48 @@
-// TODO: use typescript
-// TODO: make sure everything is atomic
-const waitForTab = (tabId, timeout = 10000) => {
+import { AlertData } from "./types";
+
+interface TabUpdateInfo {
+  status?: string;
+}
+
+interface Tab {
+  id?: number;
+  url?: string;
+  status?: string;
+}
+
+interface Message {
+  action: string;
+  type?: string;
+  message?: string;
+  tabId?: number;
+  searchQuery?: string;
+  peopleCount?: number;
+}
+
+interface StorageData {
+  automationTabId?: number;
+  isRunning?: boolean;
+  alert?: AlertData;
+}
+
+const waitForTab = (tabId: number, timeout = 10000): Promise<void> => {
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {
       chrome.tabs.onUpdated.removeListener(listener);
       reject(new Error(`Tab ${tabId} did not finish loading within ${timeout}ms`));
     }, timeout);
 
-    const listener = (updatedTabId, changeInfo, tab) => {
+    const listener = (updatedTabId: number, changeInfo: TabUpdateInfo, tab: Tab) => {
       if (updatedTabId === tabId && changeInfo.status === 'complete') {
         clearTimeout(timeoutId);
         chrome.tabs.onUpdated.removeListener(listener);
-        resolve(null);
+        resolve();
       }
     };
 
     chrome.tabs.onUpdated.addListener(listener);
     
-    chrome.tabs.get(tabId, (tab) => {
+    chrome.tabs.get(tabId, (tab: Tab) => {
       if (chrome.runtime.lastError) {
         clearTimeout(timeoutId);
         chrome.tabs.onUpdated.removeListener(listener);
@@ -28,13 +53,17 @@ const waitForTab = (tabId, timeout = 10000) => {
       if (tab.status === 'complete') {
         clearTimeout(timeoutId);
         chrome.tabs.onUpdated.removeListener(listener);
-        resolve(null);
+        resolve();
       }
     });
   });
 };
 
-const handleAlert = async (message) => {
+const handleAlert = async (message: AlertData): Promise<void> => {
+  if (!message.type) {
+    throw new Error('Alert message must have a type');
+  }
+  
   await chrome.runtime.sendMessage({
     action: 'update',
     alert: {
@@ -44,7 +73,6 @@ const handleAlert = async (message) => {
     isRunning: false
   });
   
-  // TODO: make this portion atomic
   await chrome.storage.session.set({ isRunning: false });
   await chrome.storage.session.set({
     alert: {
@@ -52,17 +80,20 @@ const handleAlert = async (message) => {
       message: message.message,
     }
   });
-}
+};
 
-const handleTabChange = async (tabId) => {
-  const { automationTabId } = await chrome.storage.session.get('automationTabId');
-  if (automationTabId && automationTabId === tabId) {
+const handleTabChange = async (tabId: number): Promise<void> => {
+  const data = await chrome.storage.session.get('automationTabId') as StorageData;
+  if (data.automationTabId && data.automationTabId === tabId) {
     await chrome.storage.session.clear();
   }
-}
+};
 
-// TODO: make sure message has a type when we have typescript
-const handleStartAutomation = async (message) => {
+const handleStartAutomation = async (message: Message): Promise<void> => {
+  if (!message.tabId || !message.searchQuery) {
+    throw new Error('Start automation message must have tabId and searchQuery');
+  }
+  
   try {
     const tab = await chrome.tabs.get(message.tabId);
     const expectedUrl = 'https://www.linkedin.com/search/results/people/?keywords=' + message.searchQuery;
@@ -72,10 +103,9 @@ const handleStartAutomation = async (message) => {
       await waitForTab(message.tabId, 10000);
     }
     
-    // TODO: make this portion atomic
     await chrome.storage.session.set({ automationTabId: message.tabId});
     await chrome.storage.session.set({ isRunning: true });
-    // TODO: fix issue where "0 out of 20" is shown when you go from non-linkedin tab to linkedin-tab
+    
     await chrome.tabs.sendMessage(message.tabId, {
       action: 'startAutomation',
       tabId: message.tabId,
@@ -86,20 +116,21 @@ const handleStartAutomation = async (message) => {
   } catch (error) {
     await handleAlert({
       type: 'error',
-      message: 'Failed to start automation: ' + error.message,
+      message: 'Failed to start automation: ' + (error as Error).message,
     });
   }
-}
+};
 
-chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener(async (message: Message, sender, sendResponse) => {
   if (message.action === 'alertUI') {
-    await handleAlert(message);
+    await handleAlert(message as AlertData);
   }
   if (message.action === 'startAutomation') {
     await handleStartAutomation(message);
   }
 });
 
-
 chrome.tabs.onRemoved.addListener(handleTabChange);
-chrome.tabs.onUpdated.addListener(handleTabChange);
+chrome.tabs.onUpdated.addListener((tabId: number, changeInfo: TabUpdateInfo, tab: Tab) => {
+  handleTabChange(tabId);
+});

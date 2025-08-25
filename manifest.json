@@ -13,17 +13,18 @@
     "https://*.linkedin.com/*"
   ],
   "action": {
-    "default_popup": "index.html",
+    "default_popup": "popup/src/index.html",
     "default_title": "LinkedIn Automation"
   },
       "content_scripts": [
       {
         "matches": ["https://www.linkedin.com/search/results/people/*"],
-        "js": ["content.js"],
+        "js": ["extension/content.js"],
         "run_at": "document_end"
       }
     ],
     "background": {
-    "service_worker": "background.js"
+      "service_worker": "extension/background.js",
+      "type": "module"
   }
 }

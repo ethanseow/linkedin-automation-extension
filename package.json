@@ -4,11 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "build:extension": "tsc -b && vite build && cp public/manifest.json dist/ && cp public/content.js dist/ && cp public/background.js dist/",
+    "dev": "vite --config vite.config.popup.ts",
+    "dev:popup": "vite --config vite.config.popup.ts",
+    "dev:extension": "vite build --config vite.config.extension.ts --watch",
+    "build": "npm run build:popup && npm run build:extension && cp ./manifest.json dist/",
+    "build:popup": "vite build --config vite.config.popup.ts",
+    "build:extension": "vite build --config vite.config.extension.ts",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview --config vite.config.popup.ts"
   },
   "dependencies": {
     "react": "^19.1.0",
@@ -17,6 +20,7 @@
   "devDependencies": {
     "@eslint/js": "^9.30.1",
     "@types/chrome": "^0.1.4",
+    "@types/node": "^22.0.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
