@@ -102,19 +102,28 @@ const navigateToNextPage = async (): Promise<void> => {
   timeouts = [];
 };
 
+const isPageLoaded = async (): Promise<boolean> => {
+  let numLinkedArea = 0;
+  let numActiveButtons = 0;
+  let timeout = 0;
+
+  while((numLinkedArea == 0 || numActiveButtons != numLinkedArea) && timeout < 10) {
+    numActiveButtons = Array.from(document.querySelectorAll('.linked-area .artdeco-button')).filter(button => {
+      const btn = button as HTMLButtonElement;
+      return !btn.disabled;
+    }).length;
+    numLinkedArea = Array.from(document.querySelectorAll('.linked-area')).length;
+    await sleep(1000);
+    timeout++;
+  }
+  return numActiveButtons == numLinkedArea;
+};
+
+
 const connectWithPeople = async (message: string, maxPeople: number): Promise<number> => {
   let numConnected = 0;
 
-  let peopleCards: Element[] = [];
-  try {
-    let cards = await querySelectorWithTimeout('.linked-area', Math.min(10, maxPeople), 3000);
-    peopleCards = Array.isArray(cards) ? cards : [cards];
-  } catch (error) {
-    console.log('linkedin-automation: Error getting people cards:', error);
-    return 0;
-  }
-
-  peopleCards = peopleCards.filter(card => card.textContent?.includes('Connect'));
+  const peopleCards = Array.from(document.querySelectorAll('.linked-area')).filter(card => card.textContent?.includes('Connect'));
 
   for (let i = 0; i < peopleCards.length && numConnected < maxPeople; i++) {
     const card = peopleCards[i];
@@ -156,46 +165,32 @@ const areSearchResultsAvailable = async (): Promise<boolean> => {
   return true;
 };
 
-const hasLimitedSearchResults = async (): Promise<boolean> => {
-  console.log('linkedin-automation: Document:', document.querySelector('.search-results-container'));
-  const searchResults = await querySelectorWithTimeout('.search-results-container', 1, 10000) as Element;
-  console.log('linkedin-automation: Search results:', searchResults);
-  const textContent = searchResults.textContent;
-  return textContent?.includes('reached the monthly limit for profile searches') ?? false;
-};
-
-const getMaxPossibleConnections = async (): Promise<number> => {
-  const peopleCards = Array.from(document.querySelectorAll('.linked-area'));
-  const filteredPeopleCards = peopleCards.filter(card => card.textContent?.includes('Connect'));
-  return filteredPeopleCards.length;
-};
-
-
 const startAutomation = async (searchQuery: string, message: string, maxPeople = 20): Promise<void> => {
   console.log('linkedin-automation: Starting automation');
-  let maxAvailableToProcess = maxPeople;
-
-  if (!await areSearchResultsAvailable()) {
+  if (!await isPageLoaded()) {
+    alertUI({type: 'error', message: 'Automation Failed: Page not loaded in time (10 seconds)'});
     return;
   }
 
-  if (await hasLimitedSearchResults()) {
-    maxAvailableToProcess = await getMaxPossibleConnections();
+  if (!await areSearchResultsAvailable()) {
+    alertUI({type: 'error', message: 'Automation Failed: No search results found'});
+    return;
   }
 
-  const numProcessed = await connectWithPeople(message, maxAvailableToProcess);
+  const numProcessed = await connectWithPeople(message, maxPeople);
 
-  if (await isNextPageAvailable() && maxAvailableToProcess - numProcessed > 0) {
+  if (await isNextPageAvailable() && maxPeople - numProcessed > 0) {
     await navigateToNextPage();
-    await startAutomation(searchQuery, message, maxAvailableToProcess - numProcessed);
+    await startAutomation(searchQuery, message, maxPeople - numProcessed);
   } else {
-    if (numProcessed < maxAvailableToProcess) {
+    if (numProcessed < maxPeople) {
       alertUI({type: 'warning', message: `${numProcessed} out of ${maxPeople} processed, no more further to connect to`});
     } else {
-      alertUI({type: 'success', message: `All ${maxAvailableToProcess} processed`});
+      alertUI({type: 'success', message: `All ${maxPeople} processed`});
     }
   }
 };
+
 
 const querySelectorWithTimeout = (selector: string, minCount = 1, timeout = 3000): Promise<Element | Element[]> => {
   const checkElements = (): Element | Element[] | null => {
