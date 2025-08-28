@@ -102,12 +102,12 @@ const navigateToNextPage = async (): Promise<void> => {
   timeouts = [];
 };
 
-const isPageLoaded = async (): Promise<boolean> => {
+const waitForPageLoad = async (): Promise<void> => {
   let numLinkedArea = 0;
   let numActiveButtons = 0;
   let timeout = 0;
 
-  while((numLinkedArea == 0 || numActiveButtons != numLinkedArea) && timeout < 10) {
+  while((numLinkedArea == 0 || numActiveButtons != numLinkedArea) && timeout < 5) {
     numActiveButtons = Array.from(document.querySelectorAll('.linked-area .artdeco-button')).filter(button => {
       const btn = button as HTMLButtonElement;
       return !btn.disabled;
@@ -116,7 +116,6 @@ const isPageLoaded = async (): Promise<boolean> => {
     await sleep(1000);
     timeout++;
   }
-  return numActiveButtons == numLinkedArea;
 };
 
 
@@ -141,39 +140,33 @@ const connectWithPeople = async (message: string, maxPeople: number): Promise<nu
   return numConnected;
 };
 
-const areSearchResultsAvailable = async (): Promise<boolean> => {
+const checkSearchResultsAvailable = async (): Promise<void> => {
   let searchResults: Element | null = null;
   try {
     searchResults = await querySelectorWithTimeout('.search-results-container', 1, 10000) as Element;
   } catch (error) {
-    alertUI({type: 'error', message: 'Automation Failed: Could not find search container'});
-    return false;
+    throw new Error('Automation Failed: Could not find search container');
   }
 
   const textContent = searchResults.textContent;
 
   if (!textContent) {
-    alertUI({type: 'error', message: 'Automation Failed: Search results container has no content'});
-    return false;
+    throw new Error('Automation Failed: Search results container has no content');
   }
 
    if(textContent.includes('No results found')) {
-    alertUI({type: 'error', message: 'Automation Failed: No results found.'});
-    return false;
+    throw new Error('Automation Failed: No results found.');
   }
-
-  return true;
 };
 
 const startAutomation = async (searchQuery: string, message: string, maxPeople = 20): Promise<void> => {
   console.log('linkedin-automation: Starting automation');
-  if (!await isPageLoaded()) {
-    alertUI({type: 'error', message: 'Automation Failed: Page not loaded in time (10 seconds)'});
-    return;
-  }
+  await waitForPageLoad();
 
-  if (!await areSearchResultsAvailable()) {
-    alertUI({type: 'error', message: 'Automation Failed: No search results found'});
+  try{  
+    await checkSearchResultsAvailable();
+  } catch (error) {
+    alertUI({type: 'error', message: (error as Error).message});
     return;
   }
 
