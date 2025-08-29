@@ -10,12 +10,18 @@ interface AutomationRequest {
 let observers: MutationObserver[] = [];
 let timeouts: number[] = [];
 
-chrome.runtime.onMessage.addListener(async (request: AutomationRequest, sender, sendResponse) => {
-  if (request.action === 'startAutomation') {
-    if (!request.searchQuery || !request.message || !request.peopleCount) {
+chrome.runtime.onMessage.addListener(async (request: AutomationRequest) => {
+  if (request.action === 'startPeopleSearchAutomation') {
+    if (!request.message || !request.peopleCount) {
       throw new Error('Start automation request missing required fields');
     }
-    await startAutomation(request.searchQuery, request.message, request.peopleCount);
+    await startPeopleSearchAutomation(request.message, request.peopleCount);
+  }
+  if (request.action === 'startMyNetworkAutomation') {
+    if(!request.peopleCount) {
+      throw new Error('Start automation request missing required fields');
+    }
+    await startMyNetworkAutomation(request.peopleCount);
   }
 });
 
@@ -102,7 +108,7 @@ const navigateToNextPage = async (): Promise<void> => {
   timeouts = [];
 };
 
-const waitForPageLoad = async (): Promise<void> => {
+const waitForPeoplePageLoad = async (): Promise<void> => {
   let numLinkedArea = 0;
   let numActiveButtons = 0;
   let timeout = 0;
@@ -115,6 +121,17 @@ const waitForPageLoad = async (): Promise<void> => {
     numLinkedArea = Array.from(document.querySelectorAll('.linked-area')).length;
     await sleep(1000);
     timeout++;
+  }
+};
+
+const waitForMyNetworkPageLoad = async (): Promise<void> => {
+  for(let i = 0; i < 5; i++) {
+    const buttons = Array.from(document.querySelectorAll('button[aria-label]'))
+      .filter(btn => btn && btn.getAttribute('aria-label')?.includes('Show all suggestions for People you may know'));
+    if (buttons.length > 0) {
+      break;
+    }
+    await sleep(1000);
   }
 };
 
@@ -159,9 +176,25 @@ const checkSearchResultsAvailable = async (): Promise<void> => {
   }
 };
 
-const startAutomation = async (searchQuery: string, message: string, maxPeople = 20): Promise<void> => {
-  console.log('linkedin-automation: Starting automation');
-  await waitForPageLoad();
+const connectWithMyNetwork = async (maxPeople: number): Promise<void> => {
+  const showAllButton = Array.from(document.querySelectorAll('button[aria-label]'))
+    .filter(btn => btn && btn.getAttribute('aria-label')?.includes('Show all suggestions for People you may know'))[0] as HTMLButtonElement;
+  showAllButton.click();
+  const dialog = await querySelectorWithTimeout('[data-testid="dialog"]', 1, 10000) as Element;
+  while(maxPeople > 0) {
+
+  }
+};
+
+const startMyNetworkAutomation = async (maxPeople: number): Promise<void> => {
+  console.log('linkedin-automation: Starting my network automation');
+  await waitForMyNetworkPageLoad();
+  await connectWithMyNetwork(maxPeople);
+};
+
+const startPeopleSearchAutomation = async (message: string, maxPeople = 20): Promise<void> => {
+  console.log('linkedin-automation: Starting people search automation');
+  await waitForPeoplePageLoad();
 
   try{  
     await checkSearchResultsAvailable();
@@ -174,7 +207,7 @@ const startAutomation = async (searchQuery: string, message: string, maxPeople =
 
   if (await isNextPageAvailable() && maxPeople - numProcessed > 0) {
     await navigateToNextPage();
-    await startAutomation(searchQuery, message, maxPeople - numProcessed);
+    await startPeopleSearchAutomation(message, maxPeople - numProcessed);
   } else {
     if (numProcessed < maxPeople) {
       alertUI({type: 'warning', message: `${numProcessed} out of ${maxPeople} processed, no more further to connect to`});

@@ -53,16 +53,14 @@ function App() {
     return currentTab.id
   }
 
-  const startAutomation = useCallback(async (tabId: number) => {
+  const startAction = useCallback(async (action: string, tabId: number, additionalData?: any) => {
     const retries = 3
     for (let i = 0; i < retries; i++) {
       try {
         await window.chrome.runtime.sendMessage({
-          action: 'startAutomation',
+          action,
           tabId,
-          searchQuery,
-          message,
-          peopleCount
+          ...additionalData
         })
         return
       } catch (error) {
@@ -72,8 +70,8 @@ function App() {
         await new Promise(resolve => setTimeout(resolve, 1000))
       }
     }
-    throw new Error('Failed to start automation')
-  }, [searchQuery, message, peopleCount])
+    throw new Error(`Failed to start ${action}`)
+  }, [])
 
   const handleAutomationError = (error: any) => {
     console.log('linkedin-automation: Error starting automation:', error)
@@ -90,8 +88,27 @@ function App() {
       const tabId = await getCurrentTabId()
 
       console.log('linkedin-automation: Sending message to tab:', tabId)
-      await startAutomation(tabId)
+      await startAction('startPeopleSearchAutomation', tabId, {
+        searchQuery,
+        message,
+        peopleCount
+      })
       console.log('linkedin-automation: Message sent to tab:', tabId)
+    } catch (error) {
+      handleAutomationError(error)
+    }
+  }
+
+  const handleMyConnect = async () => {
+    try {
+      setIsRunning(true)
+      setAlertState(null)
+      
+      const tabId = await getCurrentTabId()
+      
+      console.log('linkedin-automation: Starting my network automation on tab:', tabId)
+      await startAction('startMyNetworkAutomation', tabId)
+      console.log('linkedin-automation: My network automation started on tab:', tabId)
     } catch (error) {
       handleAutomationError(error)
     }
@@ -151,8 +168,22 @@ function App() {
         disabled={isRunning || !searchQuery.trim() || peopleCount < 1}
         className="start-btn"
       >
-        {isRunning ? 'Running...' : 'Start Automation'}
+        Start Automation
       </button>
+
+      <button 
+        onClick={handleMyConnect}
+        disabled={isRunning}
+        className="start-btn"
+      >
+        Mass Connect with My Network
+      </button>
+
+      {isRunning && (
+        <div className="running-indicator">
+          Running ...
+        </div>
+      )}
 
       {alertState && (
         <div className={`alert alert-${alertState.type}`}>
