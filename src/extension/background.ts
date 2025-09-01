@@ -25,13 +25,6 @@ interface Tab {
   status?: string;
 }
 
-interface AutomationConfig {
-  action: string;
-  url: string;
-  requiredFields?: string[];
-  errorMessagePrefix: string;
-}
-
 interface StorageData {
   automationTabId?: number;
   isRunning?: boolean;

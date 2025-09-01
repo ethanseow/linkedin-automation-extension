@@ -53,14 +53,13 @@ function App() {
     return currentTab.id
   }
 
-  const startAction = useCallback(async (action: string, tabId: number, additionalData?: any) => {
+  const startAction = useCallback(async (action: string, payload: any) => {
     const retries = 3
     for (let i = 0; i < retries; i++) {
       try {
         await window.chrome.runtime.sendMessage({
           action,
-          tabId,
-          ...additionalData
+          payload 
         })
         return
       } catch (error) {
@@ -88,7 +87,8 @@ function App() {
       const tabId = await getCurrentTabId()
 
       console.log('linkedin-automation: Sending message to tab:', tabId)
-      await startAction('startPeopleSearchAutomation', tabId, {
+      await startAction('startPeopleSearchAutomation', {
+        tabId,
         searchQuery,
         message,
         peopleCount
@@ -107,7 +107,10 @@ function App() {
       const tabId = await getCurrentTabId()
       
       console.log('linkedin-automation: Starting my network automation on tab:', tabId)
-      await startAction('startMyNetworkAutomation', tabId)
+      await startAction('startMyNetworkAutomation', {
+        tabId,
+        peopleCount
+      })
       console.log('linkedin-automation: My network automation started on tab:', tabId)
     } catch (error) {
       handleAutomationError(error)

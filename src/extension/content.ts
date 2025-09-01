@@ -28,8 +28,10 @@ chrome.runtime.onMessage.addListener(async (request: AutomationRequest) => {
 const alertUI = (alertData: AlertData): void => {
   chrome.runtime.sendMessage({
     action: 'alertUI',
-    type: alertData.type,
-    message: alertData.message
+    payload: {
+      type: alertData.type,
+      message: alertData.message
+    }
   });
 };
 
@@ -136,6 +138,18 @@ const waitForMyNetworkPageLoad = async (): Promise<void> => {
 };
 
 
+
+const waitForLoadMoreConnectionsToLoad = async (prevHeight: number): Promise<void> => {
+  for(let i = 0; i < 5; i++) {
+    const dialogScroll = await querySelectorWithTimeout('#dialog-header + div', 1, 5000) as Element;
+    if (dialogScroll.scrollHeight > prevHeight) {
+      return;
+    }
+    await sleep(1000);
+  }
+  throw new Error('Automation Failed: Did not load more connections');
+};
+
 const connectWithPeople = async (message: string, maxPeople: number): Promise<number> => {
   let numConnected = 0;
 
@@ -176,20 +190,44 @@ const checkSearchResultsAvailable = async (): Promise<void> => {
   }
 };
 
-const connectWithMyNetwork = async (maxPeople: number): Promise<void> => {
+const connectWithMyNetwork = async (maxPeople: number): Promise<number> => {
   const showAllButton = Array.from(document.querySelectorAll('button[aria-label]'))
     .filter(btn => btn && btn.getAttribute('aria-label')?.includes('Show all suggestions for People you may know'))[0] as HTMLButtonElement;
   showAllButton.click();
-  const dialog = await querySelectorWithTimeout('[data-testid="dialog"]', 1, 10000) as Element;
   while(maxPeople > 0) {
-
+    const dialog = await querySelectorWithTimeout('[data-testid="dialog"]', 1, 5000) as Element;
+    const connectButtons = await querySelectorWithTimeout('button', 2, 5000, (btn) => btn.textContent?.trim() === 'Connect', dialog) as HTMLButtonElement[];
+    if(connectButtons.length === 0) {
+      return maxPeople;
+    }
+    for(const connectButton of connectButtons) {
+      connectButton.click();
+      await sleep(250);
+      maxPeople -= 1;
+      if(maxPeople <= 0) {
+        break;
+      }
+    }
+    const dialogScroll = await querySelectorWithTimeout('#dialog-header + div', 1, 5000) as Element;
+    const prevScrollHeight = dialogScroll.scrollHeight;
+    dialogScroll.scrollTop = prevScrollHeight;
+    const loadMoreBtn = await querySelectorWithTimeout('button', 1, 5000, (btn) => btn.textContent?.trim() === 'Load more', dialog) as HTMLButtonElement;
+    loadMoreBtn.click();
+    await waitForLoadMoreConnectionsToLoad(prevScrollHeight);
+    dialogScroll.scrollTop = dialogScroll.scrollHeight;
   }
+  return maxPeople;
 };
 
 const startMyNetworkAutomation = async (maxPeople: number): Promise<void> => {
   console.log('linkedin-automation: Starting my network automation');
   await waitForMyNetworkPageLoad();
-  await connectWithMyNetwork(maxPeople);
+  try{
+    const numConnected = await connectWithMyNetwork(maxPeople);
+    alertUI({type: 'success', message: `${maxPeople - numConnected} out of ${maxPeople} people connected`});
+  } catch (error) {
+    alertUI({type: 'error', message: (error as Error).message});
+  }
 };
 
 const startPeopleSearchAutomation = async (message: string, maxPeople = 20): Promise<void> => {
@@ -218,11 +256,15 @@ const startPeopleSearchAutomation = async (message: string, maxPeople = 20): Pro
 };
 
 
-const querySelectorWithTimeout = (selector: string, minCount = 1, timeout = 3000): Promise<Element | Element[]> => {
+const querySelectorWithTimeout = (selector: string, minCount = 1, timeout = 3000, filterFunction?: (element: Element) => boolean, parentElement: Document | Element = document): Promise<Element | Element[]> => {
   const checkElements = (): Element | Element[] | null => {
-    const elements = document.querySelectorAll(selector);
+    const elements = parentElement.querySelectorAll(selector);
     if (elements.length >= minCount) {
-      return minCount === 1 ? elements[0] : Array.from(elements);
+      const filteredElements = Array.from(elements).filter(filterFunction || ((() => true)));
+      if (filteredElements.length === 0) {
+        return null;
+      }
+      return minCount === 1 ? filteredElements[0] : filteredElements;
     }
     return null;
   };

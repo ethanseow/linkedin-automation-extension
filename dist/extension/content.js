@@ -1,18 +1,26 @@
 let observers = [];
 let timeouts = [];
-chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
-  if (request.action === "startAutomation") {
-    if (!request.searchQuery || !request.message || !request.peopleCount) {
+chrome.runtime.onMessage.addListener(async (request) => {
+  if (request.action === "startPeopleSearchAutomation") {
+    if (!request.message || !request.peopleCount) {
       throw new Error("Start automation request missing required fields");
     }
-    await startAutomation(request.searchQuery, request.message, request.peopleCount);
+    await startPeopleSearchAutomation(request.message, request.peopleCount);
+  }
+  if (request.action === "startMyNetworkAutomation") {
+    if (!request.peopleCount) {
+      throw new Error("Start automation request missing required fields");
+    }
+    await startMyNetworkAutomation(request.peopleCount);
   }
 });
 const alertUI = (alertData) => {
   chrome.runtime.sendMessage({
     action: "alertUI",
-    type: alertData.type,
-    message: alertData.message
+    payload: {
+      type: alertData.type,
+      message: alertData.message
+    }
   });
 };
 const handleAddFreeNote = async (message) => {
@@ -80,7 +88,7 @@ const navigateToNextPage = async () => {
   observers = [];
   timeouts = [];
 };
-const waitForPageLoad = async () => {
+const waitForPeoplePageLoad = async () => {
   let numLinkedArea = 0;
   let numActiveButtons = 0;
   let timeout = 0;
@@ -93,6 +101,25 @@ const waitForPageLoad = async () => {
     await sleep(1e3);
     timeout++;
   }
+};
+const waitForMyNetworkPageLoad = async () => {
+  for (let i = 0; i < 5; i++) {
+    const buttons = Array.from(document.querySelectorAll("button[aria-label]")).filter((btn) => btn && btn.getAttribute("aria-label")?.includes("Show all suggestions for People you may know"));
+    if (buttons.length > 0) {
+      break;
+    }
+    await sleep(1e3);
+  }
+};
+const waitForLoadMoreConnectionsToLoad = async (prevHeight) => {
+  for (let i = 0; i < 5; i++) {
+    const dialogScroll = await querySelectorWithTimeout("#dialog-header + div", 1, 5e3);
+    if (dialogScroll.scrollHeight > prevHeight) {
+      return;
+    }
+    await sleep(1e3);
+  }
+  throw new Error("Automation Failed: Did not load more connections");
 };
 const connectWithPeople = async (message, maxPeople) => {
   let numConnected = 0;
@@ -126,9 +153,46 @@ const checkSearchResultsAvailable = async () => {
     throw new Error("Automation Failed: No results found.");
   }
 };
-const startAutomation = async (searchQuery, message, maxPeople = 20) => {
-  console.log("linkedin-automation: Starting automation");
-  await waitForPageLoad();
+const connectWithMyNetwork = async (maxPeople) => {
+  const showAllButton = Array.from(document.querySelectorAll("button[aria-label]")).filter((btn) => btn && btn.getAttribute("aria-label")?.includes("Show all suggestions for People you may know"))[0];
+  showAllButton.click();
+  while (maxPeople > 0) {
+    const dialog = await querySelectorWithTimeout('[data-testid="dialog"]', 1, 5e3);
+    const connectButtons = await querySelectorWithTimeout("button", 2, 5e3, (btn) => btn.textContent?.trim() === "Connect", dialog);
+    if (connectButtons.length === 0) {
+      return maxPeople;
+    }
+    for (const connectButton of connectButtons) {
+      connectButton.click();
+      await sleep(250);
+      maxPeople -= 1;
+      if (maxPeople <= 0) {
+        break;
+      }
+    }
+    const dialogScroll = await querySelectorWithTimeout("#dialog-header + div", 1, 5e3);
+    const prevScrollHeight = dialogScroll.scrollHeight;
+    dialogScroll.scrollTop = prevScrollHeight;
+    const loadMoreBtn = await querySelectorWithTimeout("button", 1, 5e3, (btn) => btn.textContent?.trim() === "Load more", dialog);
+    loadMoreBtn.click();
+    await waitForLoadMoreConnectionsToLoad(prevScrollHeight);
+    dialogScroll.scrollTop = dialogScroll.scrollHeight;
+  }
+  return maxPeople;
+};
+const startMyNetworkAutomation = async (maxPeople) => {
+  console.log("linkedin-automation: Starting my network automation");
+  await waitForMyNetworkPageLoad();
+  try {
+    const numConnected = await connectWithMyNetwork(maxPeople);
+    alertUI({ type: "success", message: `${numConnected} out of ${maxPeople} people connected` });
+  } catch (error) {
+    alertUI({ type: "error", message: error.message });
+  }
+};
+const startPeopleSearchAutomation = async (message, maxPeople = 20) => {
+  console.log("linkedin-automation: Starting people search automation");
+  await waitForPeoplePageLoad();
   try {
     await checkSearchResultsAvailable();
   } catch (error) {
@@ -138,7 +202,7 @@ const startAutomation = async (searchQuery, message, maxPeople = 20) => {
   const numProcessed = await connectWithPeople(message, maxPeople);
   if (await isNextPageAvailable() && maxPeople - numProcessed > 0) {
     await navigateToNextPage();
-    await startAutomation(searchQuery, message, maxPeople - numProcessed);
+    await startPeopleSearchAutomation(message, maxPeople - numProcessed);
   } else {
     if (numProcessed < maxPeople) {
       alertUI({ type: "warning", message: `${numProcessed} out of ${maxPeople} processed, no more further to connect to` });
@@ -147,11 +211,15 @@ const startAutomation = async (searchQuery, message, maxPeople = 20) => {
     }
   }
 };
-const querySelectorWithTimeout = (selector, minCount = 1, timeout = 3e3) => {
+const querySelectorWithTimeout = (selector, minCount = 1, timeout = 3e3, filterFunction, parentElement = document) => {
   const checkElements = () => {
-    const elements = document.querySelectorAll(selector);
+    const elements = parentElement.querySelectorAll(selector);
     if (elements.length >= minCount) {
-      return minCount === 1 ? elements[0] : Array.from(elements);
+      const filteredElements = Array.from(elements).filter(filterFunction || (() => true));
+      if (filteredElements.length === 0) {
+        return null;
+      }
+      return minCount === 1 ? filteredElements[0] : filteredElements;
     }
     return null;
   };

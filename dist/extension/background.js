@@ -4,7 +4,7 @@ const waitForTab = (tabId, timeout = 1e4) => {
       chrome.tabs.onUpdated.removeListener(listener);
       reject(new Error(`Tab ${tabId} did not finish loading within ${timeout}ms`));
     }, timeout);
-    const listener = (updatedTabId, changeInfo, tab) => {
+    const listener = (updatedTabId, changeInfo) => {
       if (updatedTabId === tabId && changeInfo.status === "complete") {
         clearTimeout(timeoutId);
         chrome.tabs.onUpdated.removeListener(listener);
@@ -53,42 +53,49 @@ const handleTabChange = async (tabId) => {
     await chrome.storage.session.clear();
   }
 };
-const handleStartAutomation = async (message) => {
-  if (!message.tabId || !message.searchQuery) {
-    throw new Error("Start automation message must have tabId and searchQuery");
+const buildExpectedUrl = (action, payload) => {
+  if (action === "startPeopleSearchAutomation") {
+    if (!payload.searchQuery) {
+      throw new Error("Search query is required");
+    }
+    return `https://www.linkedin.com/search/results/people/?keywords=${payload.searchQuery}`;
+  } else if (action === "startMyNetworkAutomation") {
+    return "https://www.linkedin.com/mynetwork/";
+  }
+  throw new Error("Invalid action");
+};
+const handleStartAutomation = async (action, payload) => {
+  if (!payload.tabId) {
+    throw new Error(`${action} message must have tabId`);
   }
   try {
-    const tab = await chrome.tabs.get(message.tabId);
-    const expectedUrl = "https://www.linkedin.com/search/results/people/?keywords=" + message.searchQuery;
-    if (!tab.url || !tab.url.includes("linkedin.com/search/results/people/?keywords=" + message.searchQuery)) {
-      await chrome.tabs.update(message.tabId, { url: expectedUrl });
-      await waitForTab(message.tabId, 1e4);
+    const tab = await chrome.tabs.get(payload.tabId);
+    const expectedUrl = buildExpectedUrl(action, payload);
+    if (!tab.url || !tab.url.includes(expectedUrl)) {
+      await chrome.tabs.update(payload.tabId, { url: expectedUrl });
+      await waitForTab(payload.tabId, 1e4);
     }
-    await chrome.storage.session.set({ automationTabId: message.tabId });
+    await chrome.storage.session.set({ automationTabId: payload.tabId });
     await chrome.storage.session.set({ isRunning: true });
-    await chrome.tabs.sendMessage(message.tabId, {
-      action: "startAutomation",
-      tabId: message.tabId,
-      searchQuery: message.searchQuery,
-      message: message.message,
-      peopleCount: message.peopleCount
+    await chrome.tabs.sendMessage(payload.tabId, {
+      action,
+      ...payload
     });
   } catch (error) {
     await handleAlert({
       type: "error",
-      message: "Failed to start automation: " + error.message
+      message: `Failed to start ${action}: ${error.message}`
     });
   }
 };
-chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener(async (message) => {
   if (message.action === "alertUI") {
-    await handleAlert(message);
-  }
-  if (message.action === "startAutomation") {
-    await handleStartAutomation(message);
+    await handleAlert(message.payload);
+  } else {
+    await handleStartAutomation(message.action, message.payload);
   }
 });
 chrome.tabs.onRemoved.addListener(handleTabChange);
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+chrome.tabs.onUpdated.addListener((tabId) => {
   handleTabChange(tabId);
 });
