@@ -113,3 +113,13 @@ textarea {
   border: 1px solid #b3d9ff;
   border-radius: 4px;
 }
+
+.back-btn {
+  margin-bottom: 20px;
+  font-size: 14px;
+  padding: 5px 10px;
+  border: 1px solid #adadad;
+  cursor: pointer;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+

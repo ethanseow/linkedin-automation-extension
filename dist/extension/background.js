@@ -39,28 +39,23 @@ const handleAlert = async (message) => {
     }
   });
 };
-const handleTabRemoved = async (tabId) => {
+const clearAutomationSession = async (tabId, reason) => {
   try {
-    const data = await chrome.storage.session.get(["automationTabId", "isRunning"]);
-    if (data.automationTabId === tabId && data.isRunning) {
-      console.log("linkedin-automation: Automation tab closed, clearing session data");
+    const data = await chrome.storage.session.get(["automationTabId"]);
+    if (data.automationTabId === tabId) {
+      console.log(`linkedin-automation: ${reason}, clearing session data`);
       await chrome.storage.session.clear();
     }
   } catch (error) {
-    console.error("linkedin-automation: Error handling tab removal:", error);
+    console.error("linkedin-automation: Error clearing automation session:", error);
   }
+};
+const handleTabRemoved = async (tabId) => {
+  await clearAutomationSession(tabId, "Automation tab closed");
 };
 const handleTabUpdated = async (tabId, changeInfo) => {
   if (changeInfo.url && !changeInfo.url.includes("linkedin.com")) {
-    try {
-      const data = await chrome.storage.session.get(["automationTabId"]);
-      if (data.automationTabId === tabId) {
-        console.log("linkedin-automation: Navigated away from LinkedIn, clearing session");
-        await chrome.storage.session.clear();
-      }
-    } catch (error) {
-      console.error("linkedin-automation: Error handling tab update:", error);
-    }
+    await clearAutomationSession(tabId, "Navigated away from LinkedIn");
   }
 };
 const buildExpectedUrl = (action, payload) => {
@@ -81,11 +76,8 @@ const handleStartAutomation = async (action, payload) => {
   const tabTimeout = 10;
   const expectedUrl = buildExpectedUrl(action, payload);
   try {
-    const tab = await chrome.tabs.get(payload.tabId);
-    await chrome.storage.session.clear();
-    if (!tab.url || !tab.url.includes(expectedUrl)) {
-      await chrome.tabs.update(payload.tabId, { url: expectedUrl });
-    }
+    await saveAutomationInputs(action, payload);
+    await chrome.tabs.update(payload.tabId, { url: expectedUrl });
     if (!await isTabReady(payload.tabId, tabTimeout)) {
       throw new Error(`LinkedIn tab not ready after ${tabTimeout} seconds`);
     }
@@ -100,6 +92,25 @@ const handleStartAutomation = async (action, payload) => {
       type: "error",
       message: `Failed to start ${action}: ${error.message}`
     });
+  }
+};
+const saveAutomationInputs = async (action, payload) => {
+  try {
+    if (action === "startPeopleSearchAutomation") {
+      await chrome.storage.session.set({
+        selectedFlow: "searchQuery",
+        searchQuery: payload.searchQuery,
+        message: payload.message,
+        peopleCount: payload.peopleCount
+      });
+    } else if (action === "startMyNetworkAutomation") {
+      await chrome.storage.session.set({
+        selectedFlow: "myNetwork",
+        peopleCount: payload.peopleCount
+      });
+    }
+  } catch (error) {
+    throw new Error(`Failed to save automation inputs: ${error.message}`);
   }
 };
 chrome.runtime.onMessage.addListener(async (message) => {

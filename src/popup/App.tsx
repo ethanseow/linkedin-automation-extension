@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import './App.css'
 
 function App() {
+  const [selectedFlow, setSelectedFlow] = useState<'myNetwork' | 'searchQuery' | null>(null)
   const [searchQuery, setSearchQuery] = useState('crypto')
   const [message, setMessage] = useState('Hi!')
   const [peopleCount, setPeopleCount] = useState(20)
@@ -9,14 +10,21 @@ function App() {
   const [alertState, setAlertState] = useState<{type: string, message: string} | null>(null)
   
   useEffect(() => {
-    window.chrome.storage.session.get('alert', (result: any) => {
+    window.chrome.storage.session.get(['alert', 'isRunning', 'selectedFlow', 'searchQuery', 'peopleCount'], (result: any) => {
       if (result.alert) {
         setAlertState({ type: result.alert.type, message: result.alert.message })
       }
-    })
-    window.chrome.storage.session.get('isRunning', (result: any) => {
       if (result.isRunning) {
         setIsRunning(result.isRunning)
+      }
+      if (result.selectedFlow) {
+        setSelectedFlow(result.selectedFlow)
+      }
+      if (result.searchQuery) {
+        setSearchQuery(result.searchQuery)
+      }
+      if (result.peopleCount) {
+        setPeopleCount(result.peopleCount)
       }
     })
     window.chrome.runtime.onMessage.addListener(handleMessage)
@@ -36,8 +44,8 @@ function App() {
     }
   }
 
-  const validateInputs = () => {
-    if (!searchQuery.trim()) {
+  const validateInputs = (flow: 'myNetwork' | 'searchQuery') => {
+    if (flow === 'searchQuery' && !searchQuery.trim()) {
       throw new Error('Please fill in the search query')
     }
     if (peopleCount < 1 || peopleCount > 100) {
@@ -79,109 +87,173 @@ function App() {
   }
 
   const handleStartAutomation = useCallback(async () => {
+    if (!selectedFlow) return
+    
     try {
-      validateInputs()
+      validateInputs(selectedFlow)
       setIsRunning(true)
       setAlertState(null)
       
       const tabId = await getCurrentTabId()
 
-      console.log('linkedin-automation: Sending message to tab:', tabId)
-      await startAction('startPeopleSearchAutomation', {
-        tabId,
-        searchQuery,
-        message,
-        peopleCount
-      })
-      console.log('linkedin-automation: Message sent to tab:', tabId)
+      if (selectedFlow === 'searchQuery') {
+        console.log('linkedin-automation: Sending message to tab:', tabId)
+        await startAction('startPeopleSearchAutomation', {
+          tabId,
+          searchQuery,
+          message,
+          peopleCount
+        })
+        console.log('linkedin-automation: Message sent to tab:', tabId)
+      } else {
+        console.log('linkedin-automation: Starting my network automation on tab:', tabId)
+        await startAction('startMyNetworkAutomation', {
+          tabId,
+          peopleCount
+        })
+        console.log('linkedin-automation: My network automation started on tab:', tabId)
+      }
     } catch (error) {
       handleAutomationError(error)
     }
-  }, [searchQuery, message, peopleCount])
+  }, [selectedFlow, searchQuery, message, peopleCount])
 
-  const handleMyConnect = useCallback(async () => {
-    try {
-      setIsRunning(true)
-      setAlertState(null)
-      
-      const tabId = await getCurrentTabId()
-      
-      console.log('linkedin-automation: Starting my network automation on tab:', tabId)
-      await startAction('startMyNetworkAutomation', {
-        tabId,
-        peopleCount
-      })
-      console.log('linkedin-automation: My network automation started on tab:', tabId)
-    } catch (error) {
-      handleAutomationError(error)
-    }
-  }, [peopleCount])
+  const resetFlow = () => {
+    setSelectedFlow(null)
+    setIsRunning(false)
+    setAlertState(null)
+  }
+
+  const isStartButtonDisabled = () => {
+    if (isRunning || peopleCount < 1) return true
+    if (selectedFlow === 'searchQuery' && !searchQuery.trim()) return true
+    return false
+  }
 
   return (
     <div className="app">
       <h2>LinkedIn Automation</h2>
       
-      
-      <div className="form-group">
-        <label>Search Query:</label>
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="e.g., crypto asset managers"
-          disabled={isRunning}
-        />
-      </div>
+      {!selectedFlow && (
+        <div>
+          <button 
+            onClick={() => setSelectedFlow('myNetwork')}
+            className="start-btn"
+            style={{ marginBottom: '10px' }}
+          >
+            Mass Connect with "My Network"
+          </button>
 
-      <div className="form-group">
-        <label>Message:</label>
-        <textarea
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="Enter your outreach message..."
-          rows={4}
-          disabled={isRunning}
-        />
-      </div>
+          <button 
+            onClick={() => setSelectedFlow('searchQuery')}
+            className="start-btn"
+          >
+            Connect with People From Search Query
+          </button>
+        </div>
+      )}
 
-      <div className="form-group">
-        <label>Number of People:</label>
-        <input
-          type="text"
-          value={peopleCount === 0 ? '' : peopleCount}
-          onChange={(e) => {
-            const value = e.target.value
-            if(value === '') {
-              setPeopleCount(0)
-              return
-            }
-            if(isNaN(Number(value)) || Number(value) < 1) {
-              return
-            }
-            setPeopleCount(Number(value))
-          }}
-          placeholder="e.g., 20"
-          pattern="[0-9]+"
-          disabled={isRunning}
-        />
-      </div>
+      {selectedFlow === 'myNetwork' && (
+        <div>
+          <button 
+            onClick={resetFlow}
+            className="back-btn"
+            disabled={isRunning}
+          >
+            ← Back
+          </button>
 
-      <button 
-        onClick={handleStartAutomation}
-        disabled={isRunning || !searchQuery.trim() || peopleCount < 1}
-        className="start-btn"
-      >
-        Start Automation
-      </button>
+          <div className="form-group">
+            <label>Number of People:</label>
+            <input
+              type="text"
+              value={peopleCount === 0 ? '' : peopleCount}
+              onChange={(e) => {
+                const value = e.target.value
+                if(value === '') {
+                  setPeopleCount(0)
+                  return
+                }
+                if(isNaN(Number(value)) || Number(value) < 1) {
+                  return
+                }
+                setPeopleCount(Number(value))
+              }}
+              placeholder="e.g., 20"
+              pattern="[0-9]+"
+              disabled={isRunning}
+            />
+          </div>
+        </div>
+      )}
 
-      <button 
-        onClick={handleMyConnect}
-        disabled={isRunning}
-        className="start-btn"
-      >
-        Mass Connect with My Network
-      </button>
+      {selectedFlow === 'searchQuery' && (
+        <div>
+          <button 
+            onClick={resetFlow}
+            className="back-btn"
+            disabled={isRunning}
+          >
+            ← Back
+          </button>
 
+          <div className="form-group">
+            <label>Search Query:</label>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="e.g., crypto asset managers"
+              disabled={isRunning}
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Message:</label>
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Enter your outreach message..."
+              rows={4}
+              disabled={isRunning}
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Number of People:</label>
+            <input
+              type="text"
+              value={peopleCount === 0 ? '' : peopleCount}
+              onChange={(e) => {
+                const value = e.target.value
+                if(value === '') {
+                  setPeopleCount(0)
+                  return
+                }
+                if(isNaN(Number(value)) || Number(value) < 1) {
+                  return
+                }
+                setPeopleCount(Number(value))
+              }}
+              placeholder="e.g., 20"
+              pattern="[0-9]+"
+              disabled={isRunning}
+            />
+          </div>
+        </div>
+      )}
+
+      {
+        selectedFlow !== null && (
+          <button 
+            onClick={handleStartAutomation}
+            disabled={isStartButtonDisabled()}
+            className="start-btn"
+          >
+            Start Automation
+          </button>
+        )
+      }
       {isRunning && (
         <div className="running-indicator">
           Running ...
