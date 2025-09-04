@@ -1,4 +1,9 @@
 import { AlertData } from "./types";
+import { AutomationError, AutomationErrorType } from "./exceptions";
+
+const sleep = (ms: number): Promise<void> => {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+};
 
 interface AutomationRequest {
   action: string;
@@ -10,7 +15,12 @@ interface AutomationRequest {
 let observers: MutationObserver[] = [];
 let timeouts: number[] = [];
 
-chrome.runtime.onMessage.addListener(async (request: AutomationRequest) => {
+chrome.runtime.onMessage.addListener(async (request: AutomationRequest, _sender, sendResponse) => {
+  if (request.action === 'ping') {
+    sendResponse({ status: 'ready' });
+    return;
+  }
+  
   if (request.action === 'startPeopleSearchAutomation') {
     if (!request.message || !request.peopleCount) {
       throw new Error('Start automation request missing required fields');
@@ -49,6 +59,22 @@ const handleAddFreeNote = async (message: string): Promise<void> => {
   messageInput.dispatchEvent(new Event('input', { bubbles: true }));
   await sleep(500);
   sendButton.click();
+
+};
+
+const checkReachedWeeklyLimit = async (): Promise<void> => {
+  let reachedLimit = false;
+  try {
+    await querySelectorWithTimeout('#ip-fuse-limit-alert__header', 1, 1000, (btn) => btn.textContent?.trim().includes('reached the weekly') || false);
+    reachedLimit = true;
+  } catch (error) {
+    console.log('linkedin-automation: No reached weekly limit dialog found', error);
+    return;
+  }
+
+  if (reachedLimit) {
+    throw new AutomationError('Automation Failed: Connection limit reached', AutomationErrorType.REACHED_WEEKLY_LIMIT);
+  }
 };
 
 const handleSendWithoutNote = async (): Promise<void> => {
@@ -83,8 +109,10 @@ const connectWithPerson = async (personElement: Element, message: string): Promi
   }
 
   if (!didConnect) {
-    throw new Error('Did not connect to person');
+    throw new AutomationError('Did not connect to person', AutomationErrorType.DID_NOT_CONNECT_TO_PERSON);
   }
+
+  await checkReachedWeeklyLimit();
 
   const closeButton = await querySelectorWithTimeout('[aria-label="Dismiss"]', 1, 1000) as HTMLButtonElement;
   closeButton.click();
@@ -147,7 +175,7 @@ const waitForLoadMoreConnectionsToLoad = async (prevHeight: number): Promise<voi
     }
     await sleep(1000);
   }
-  throw new Error('Automation Failed: Did not load more connections');
+  throw new AutomationError('Automation Failed: Did not load more connections', AutomationErrorType.DID_NOT_LOAD_MORE_CONNECTIONS);
 };
 
 const connectWithPeople = async (message: string, maxPeople: number): Promise<number> => {
@@ -158,11 +186,19 @@ const connectWithPeople = async (message: string, maxPeople: number): Promise<nu
   for (let i = 0; i < peopleCards.length && numConnected < maxPeople; i++) {
     const card = peopleCards[i];
     console.log('linkedin-automation: Processing person:', card);
+    await sleep(500);
     try {
-      await sleep(500);
       await connectWithPerson(card, message);
       numConnected++;
     } catch (error) {
+      if (error instanceof AutomationError) {
+        switch (error.type) {
+          case AutomationErrorType.REACHED_WEEKLY_LIMIT:
+            throw error;
+          default:
+            continue;
+        }
+      }
       continue;
     }
   }
@@ -176,17 +212,27 @@ const checkSearchResultsAvailable = async (): Promise<void> => {
   try {
     searchResults = await querySelectorWithTimeout('.search-results-container', 1, 10000) as Element;
   } catch (error) {
-    throw new Error('Automation Failed: Could not find search container');
+    throw new AutomationError('Automation Failed: Could not find search container', AutomationErrorType.NO_SEARCH_RESULTS_FOUND);
   }
 
   const textContent = searchResults.textContent;
 
   if (!textContent) {
-    throw new Error('Automation Failed: Search results container has no content');
+    throw new AutomationError('Automation Failed: Search results container has no content', AutomationErrorType.NO_SEARCH_RESULTS_FOUND);
   }
 
    if(textContent.includes('No results found')) {
-    throw new Error('Automation Failed: No results found.');
+    throw new AutomationError('Automation Failed: No results found.', AutomationErrorType.NO_SEARCH_RESULTS_FOUND);
+  }
+};
+
+const checkConnectionLimitReached = async (): Promise<void> => {
+  for(let i = 0; i < 3; i++) {
+    const connectionLimit = document.querySelector('[role=alert]');
+    if (connectionLimit) {
+      throw new AutomationError('Automation Failed: Connection limit reached', AutomationErrorType.CONNECTION_LIMIT_REACHED);
+    }
+    await sleep(1000);
   }
 };
 
@@ -200,6 +246,8 @@ const connectWithMyNetwork = async (maxPeople: number): Promise<number> => {
     if(connectButtons.length === 0) {
       return maxPeople;
     }
+    connectButtons[0].click();
+    await checkConnectionLimitReached();
     for(const connectButton of connectButtons) {
       connectButton.click();
       await sleep(250);
@@ -233,15 +281,15 @@ const startMyNetworkAutomation = async (maxPeople: number): Promise<void> => {
 const startPeopleSearchAutomation = async (message: string, maxPeople = 20): Promise<void> => {
   console.log('linkedin-automation: Starting people search automation');
   await waitForPeoplePageLoad();
+  let numProcessed = 0;
 
   try{  
     await checkSearchResultsAvailable();
+    numProcessed = await connectWithPeople(message, maxPeople);
   } catch (error) {
     alertUI({type: 'error', message: (error as Error).message});
     return;
   }
-
-  const numProcessed = await connectWithPeople(message, maxPeople);
 
   if (await isNextPageAvailable() && maxPeople - numProcessed > 0) {
     await navigateToNextPage();
@@ -286,14 +334,10 @@ const querySelectorWithTimeout = (selector: string, minCount = 1, timeout = 3000
     const timeoutId = window.setTimeout(() => {
       observer.disconnect();
       console.log('linkedin-automation: Element not found after timeout:', selector);
-      reject(new Error(`Element ${selector} not found`));
+      reject(new AutomationError(`Element ${selector} not found`, AutomationErrorType.QUERY_SELECTOR_TIMEOUT));
     }, timeout);
 
     observers.push(observer);
     timeouts.push(timeoutId);
   });
-};
-
-const sleep = (ms: number): Promise<void> => {
-  return new Promise(resolve => setTimeout(resolve, ms));
 };

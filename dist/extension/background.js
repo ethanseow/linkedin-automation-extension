@@ -1,30 +1,17 @@
-const waitForTab = (tabId, timeout = 1e4) => {
-  return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      chrome.tabs.onUpdated.removeListener(listener);
-      reject(new Error(`Tab ${tabId} did not finish loading within ${timeout}ms`));
-    }, timeout);
-    const listener = (updatedTabId, changeInfo) => {
-      if (updatedTabId === tabId && changeInfo.status === "complete") {
-        clearTimeout(timeoutId);
-        chrome.tabs.onUpdated.removeListener(listener);
-        resolve();
+const isTabReady = (tabId, timeout = 5) => {
+  return new Promise(async (resolve, _) => {
+    for (let i = 0; i < timeout; i += 1) {
+      try {
+        await chrome.tabs.sendMessage(tabId, {
+          action: "ping"
+        });
+        resolve(true);
+      } catch (error) {
+        await sleep(1e3);
+        continue;
       }
-    };
-    chrome.tabs.onUpdated.addListener(listener);
-    chrome.tabs.get(tabId, (tab) => {
-      if (chrome.runtime.lastError) {
-        clearTimeout(timeoutId);
-        chrome.tabs.onUpdated.removeListener(listener);
-        reject(new Error(`Tab ${tabId} not found: ${chrome.runtime.lastError.message}`));
-        return;
-      }
-      if (tab.status === "complete") {
-        clearTimeout(timeoutId);
-        chrome.tabs.onUpdated.removeListener(listener);
-        resolve();
-      }
-    });
+    }
+    resolve(false);
   });
 };
 const handleAlert = async (message) => {
@@ -47,10 +34,28 @@ const handleAlert = async (message) => {
     }
   });
 };
-const handleTabChange = async (tabId) => {
-  const data = await chrome.storage.session.get("automationTabId");
-  if (data.automationTabId && data.automationTabId === tabId) {
-    await chrome.storage.session.clear();
+const handleTabRemoved = async (tabId) => {
+  try {
+    const data = await chrome.storage.session.get(["automationTabId", "isRunning"]);
+    if (data.automationTabId === tabId && data.isRunning) {
+      console.log("linkedin-automation: Automation tab closed, clearing session data");
+      await chrome.storage.session.clear();
+    }
+  } catch (error) {
+    console.error("linkedin-automation: Error handling tab removal:", error);
+  }
+};
+const handleTabUpdated = async (tabId, changeInfo) => {
+  if (changeInfo.url && !changeInfo.url.includes("linkedin.com")) {
+    try {
+      const data = await chrome.storage.session.get(["automationTabId"]);
+      if (data.automationTabId === tabId) {
+        console.log("linkedin-automation: Navigated away from LinkedIn, clearing session");
+        await chrome.storage.session.clear();
+      }
+    } catch (error) {
+      console.error("linkedin-automation: Error handling tab update:", error);
+    }
   }
 };
 const buildExpectedUrl = (action, payload) => {
@@ -64,16 +69,23 @@ const buildExpectedUrl = (action, payload) => {
   }
   throw new Error("Invalid action");
 };
+const clearSession = async () => {
+  await chrome.storage.session.clear();
+};
 const handleStartAutomation = async (action, payload) => {
   if (!payload.tabId) {
     throw new Error(`${action} message must have tabId`);
   }
+  const tabTimeout = 5;
+  const expectedUrl = buildExpectedUrl(action, payload);
   try {
     const tab = await chrome.tabs.get(payload.tabId);
-    const expectedUrl = buildExpectedUrl(action, payload);
+    await clearSession();
     if (!tab.url || !tab.url.includes(expectedUrl)) {
       await chrome.tabs.update(payload.tabId, { url: expectedUrl });
-      await waitForTab(payload.tabId, 1e4);
+    }
+    if (!await isTabReady(payload.tabId, tabTimeout)) {
+      throw new Error(`LinkedIn tab not ready after ${tabTimeout} seconds`);
     }
     await chrome.storage.session.set({ automationTabId: payload.tabId });
     await chrome.storage.session.set({ isRunning: true });
@@ -95,7 +107,8 @@ chrome.runtime.onMessage.addListener(async (message) => {
     await handleStartAutomation(message.action, message.payload);
   }
 });
-chrome.tabs.onRemoved.addListener(handleTabChange);
-chrome.tabs.onUpdated.addListener((tabId) => {
-  handleTabChange(tabId);
-});
+const sleep = (ms) => {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+};
+chrome.tabs.onRemoved.addListener(handleTabRemoved);
+chrome.tabs.onUpdated.addListener(handleTabUpdated);
