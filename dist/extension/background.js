@@ -2,6 +2,11 @@ const isTabReady = (tabId, timeout = 5) => {
   return new Promise(async (resolve, _) => {
     for (let i = 0; i < timeout; i += 1) {
       try {
+        const tab = await chrome.tabs.get(tabId);
+        if (tab.status !== "complete") {
+          await sleep(1e3);
+          continue;
+        }
         await chrome.tabs.sendMessage(tabId, {
           action: "ping"
         });
@@ -69,18 +74,15 @@ const buildExpectedUrl = (action, payload) => {
   }
   throw new Error("Invalid action");
 };
-const clearSession = async () => {
-  await chrome.storage.session.clear();
-};
 const handleStartAutomation = async (action, payload) => {
   if (!payload.tabId) {
     throw new Error(`${action} message must have tabId`);
   }
-  const tabTimeout = 5;
+  const tabTimeout = 10;
   const expectedUrl = buildExpectedUrl(action, payload);
   try {
     const tab = await chrome.tabs.get(payload.tabId);
-    await clearSession();
+    await chrome.storage.session.clear();
     if (!tab.url || !tab.url.includes(expectedUrl)) {
       await chrome.tabs.update(payload.tabId, { url: expectedUrl });
     }

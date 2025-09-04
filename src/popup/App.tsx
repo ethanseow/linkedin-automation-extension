@@ -78,7 +78,7 @@ function App() {
     setAlertState({ type: 'error', message: error.message || 'Error starting automation. Please try again.' })
   }
 
-  const handleStartAutomation = async () => {
+  const handleStartAutomation = useCallback(async () => {
     try {
       validateInputs()
       setIsRunning(true)
@@ -97,9 +97,9 @@ function App() {
     } catch (error) {
       handleAutomationError(error)
     }
-  }
+  }, [searchQuery, message, peopleCount])
 
-  const handleMyConnect = async () => {
+  const handleMyConnect = useCallback(async () => {
     try {
       setIsRunning(true)
       setAlertState(null)
@@ -115,7 +115,7 @@ function App() {
     } catch (error) {
       handleAutomationError(error)
     }
-  }
+  }, [peopleCount])
 
   return (
     <div className="app">

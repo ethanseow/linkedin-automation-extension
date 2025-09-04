@@ -30,13 +30,14 @@ chrome.runtime.onMessage.addListener(async (request, _sender, sendResponse) => {
   }
   if (request.action === "startPeopleSearchAutomation") {
     if (!request.message || !request.peopleCount) {
-      throw new Error("Start automation request missing required fields");
+      alertUI({ type: "error", message: "Start automation request missing required fields of message and people count" });
+      return;
     }
     await startPeopleSearchAutomation(request.message, request.peopleCount);
-  }
-  if (request.action === "startMyNetworkAutomation") {
+  } else if (request.action === "startMyNetworkAutomation") {
     if (!request.peopleCount) {
-      throw new Error("Start automation request missing required fields");
+      alertUI({ type: "error", message: "Start automation request missing required fields of people count" });
+      return;
     }
     await startMyNetworkAutomation(request.peopleCount);
   }

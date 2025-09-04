@@ -22,6 +22,13 @@ const isTabReady = (tabId: number, timeout = 5): Promise<boolean> => {
   return new Promise(async (resolve, _) => {
     for (let i = 0; i < timeout; i += 1) {
       try {
+        const tab = await chrome.tabs.get(tabId);
+        
+        if (tab.status !== 'complete') {
+          await sleep(1000);
+          continue;
+        }
+        
         await chrome.tabs.sendMessage(tabId, {
           action: 'ping'
         });
@@ -96,27 +103,23 @@ const buildExpectedUrl = (action: string, payload: any): string => {
   throw new Error('Invalid action');
 }
 
-const clearSession = async (): Promise<void> => {
-  await chrome.storage.session.clear();
-}
-
 const handleStartAutomation = async (action: string, payload: BaseActionPayload): Promise<void> => {
   if (!payload.tabId) {
     throw new Error(`${action} message must have tabId`);
   }
 
-  const tabTimeout = 5;
+  const tabTimeout = 10;
   const expectedUrl = buildExpectedUrl(action, payload);
   
   try {
     const tab = await chrome.tabs.get(payload.tabId);
 
-    await clearSession();
+    await chrome.storage.session.clear();
 
     if (!tab.url || !tab.url.includes(expectedUrl)) {
       await chrome.tabs.update(payload.tabId, { url: expectedUrl });
     }
-    
+
     if (!await isTabReady(payload.tabId, tabTimeout)) {
       throw new Error(`LinkedIn tab not ready after ${tabTimeout} seconds`);
     }
